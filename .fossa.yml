@@ -9,5 +9,5 @@ analyze:
   modules:
     - name: v8go
       type: go
-      target: github.com/tommie/v8go
+      target: github.com/stumble/v8go
       path: .

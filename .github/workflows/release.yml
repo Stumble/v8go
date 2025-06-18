@@ -70,9 +70,11 @@ jobs:
         set -o pipefail
 
         version=$(sed -e 's;^##\s\+\[\(v[0-9.]\+\)\].*;\1; p ; d' CHANGELOG.md | head -n 1)
+        repo="${{ github.repository }}"
+        repo_lower="${repo,,}"
 
         (
-          echo "Full changelog ⇒ [$version](https://github.com/${{ github.repository }}/blob/$version/CHANGELOG.md)"
+          echo "Full changelog ⇒ [$version](https://github.com/$repo_lower/blob/$version/CHANGELOG.md)"
 
           awk -v version="$version" '
             /^##\s+\[.*?\]\s/ && $2 != "[" version "]" {

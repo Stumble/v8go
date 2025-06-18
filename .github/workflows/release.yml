@@ -48,7 +48,7 @@ jobs:
   release:
     name: Release
     needs: [test, leakcheck]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       committed: ${{ steps.commit_changelog.outputs.committed }}
       sha: ${{ steps.commit_changelog.outputs.commit_long_sha }}

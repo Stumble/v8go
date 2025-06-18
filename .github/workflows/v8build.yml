@@ -23,7 +23,7 @@ on:
 jobs:
   build_common:
     name: Build Architecture Independent Files
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       v8_hash: ${{ steps.update_v8.outputs.v8_hash }}
     steps:
@@ -76,7 +76,7 @@ jobs:
         arch: [amd64, arm64]
         include:
         - os: linux
-          platform: ubuntu-latest
+          platform: ubuntu-22.04
         - os: darwin
           platform: macos-latest
     runs-on: ${{ matrix.platform }}
@@ -93,7 +93,7 @@ jobs:
         PIP_BREAK_SYSTEM_PACKAGES: '1'
 
     - name: Install CCache
-      if: matrix.platform == 'ubuntu-latest'
+      if: matrix.platform == 'ubuntu-22.04'
       run: |
         sudo apt-get update
         sudo apt-get install -yq ccache
@@ -179,7 +179,7 @@ jobs:
   commit:
     name: Commit Built Artifacts
     needs: [build, build_common]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       committed: ${{ steps.commit.outputs.committed }}
       sha: ${{ steps.create_summary.outputs.sha }}
@@ -269,7 +269,7 @@ jobs:
     name: Sync Submodule Dependencies
     needs: commit
     if: ${{ needs.commit.outputs.committed == 'true' }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       committed: ${{ steps.commit.outputs.committed }}
       sha: ${{ steps.create_summary.outputs.sha }}

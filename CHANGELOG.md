@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Add support for `Value.TypeOf()` corresponding to JavaScript `typeof` operator in [#104](https://github.com/tommie/v8go/pull/104).
 
 ### Changed
+- Auto-bumped V8 to 13.6.233.10.
 
 ## [v0.33.0] - 2025-05-15
 

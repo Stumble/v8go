@@ -149,7 +149,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Fixed
 - Release tags need to include the patch number.
   Thank you for the report, @GraphR00t.
-  (https://github.com/tommie/v8go/issues/62)
+  (https://github.com/stumble/v8go/issues/62)
 
 ## [v0.11] - 2024-03-02
 

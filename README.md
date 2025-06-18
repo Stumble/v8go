@@ -1,9 +1,9 @@
 # Execute JavaScript from Go
 
-<a href="https://github.com/tommie/v8go/releases"><img src="https://img.shields.io/github/v/release/tommie/v8go" alt="Github release"></a>
-[![Go Report Card](https://goreportcard.com/badge/github.com/tommie/v8go)](https://goreportcard.com/report/github.com/tommie/v8go)
-[![Go Reference](https://pkg.go.dev/badge/github.com/tommie/v8go.svg)](https://pkg.go.dev/github.com/tommie/v8go)
-[![Test](https://github.com/tommie/v8go/actions/workflows/test.yml/badge.svg)](https://github.com/tommie/v8go/actions/workflows/test.yml)
+<a href="https://github.com/stumble/v8go/releases"><img src="https://img.shields.io/github/v/release/tommie/v8go" alt="Github release"></a>
+[![Go Report Card](https://goreportcard.com/badge/github.com/stumble/v8go)](https://goreportcard.com/report/github.com/stumble/v8go)
+[![Go Reference](https://pkg.go.dev/badge/github.com/stumble/v8go.svg)](https://pkg.go.dev/github.com/stumble/v8go)
+[![Test](https://github.com/stumble/v8go/actions/workflows/test.yml/badge.svg)](https://github.com/stumble/v8go/actions/workflows/test.yml)
 
 <img src="gopher.jpg" width="200px" alt="V8 Gopher based on original artwork from the amazing Renee French" style="float:right" />
 
@@ -40,7 +40,7 @@ Major differences include
 ## Usage
 
 ```go
-import v8 "github.com/tommie/v8go"
+import v8 "github.com/stumble/v8go"
 ```
 
 ### Running a script
@@ -209,7 +209,7 @@ func printTree(nest string, node *v8.CPUProfileNode) {
 
 ## Documentation
 
-Go Reference & more examples: https://pkg.go.dev/github.com/tommie/v8go
+Go Reference & more examples: https://pkg.go.dev/github.com/stumble/v8go
 
 ### Support
 
@@ -258,24 +258,24 @@ This project also aims to keep up-to-date with the latest (stable) release of V8
 
 ### Upgrading the V8 binaries
 
-We have the [v8upgrade](https://github.com/tommie/v8go/.github/workflow/v8upgrade.yml) workflow.
+We have the [v8upgrade](https://github.com/stumble/v8go/.github/workflow/v8upgrade.yml) workflow.
 The workflow is triggered every day or manually.
 When run, it finds the current stable V8 version on https://chromiumdash.appspot.com/.
 If the new version is different from `deps/v8_hash`, it runs `v8build` and `release`.
 
-The [v8build](https://github.com/tommie/v8go/.github/workflow/v8build.yml) workflow upgrades V8 and builds the libraries.
+The [v8build](https://github.com/stumble/v8go/.github/workflow/v8build.yml) workflow upgrades V8 and builds the libraries.
 It is triggered by the `v8upgrade` workflow, or being run manually.
 Each architecture is a separate job, storing build artifacts that are picked up by the Commit job.
 This job updates the master branch.
 Then it runs `syncsubdeps`.
 
-The [syncsubdeps](https://github.com/tommie/v8go/.github/workflow/syncsubdeps.yml) workflow updates the `go.mod` file to point to the new commit.
+The [syncsubdeps](https://github.com/stumble/v8go/.github/workflow/syncsubdeps.yml) workflow updates the `go.mod` file to point to the new commit.
 Each architecture in `deps/` is its own Go module.
 This is needed to work around size constraints in Go module handling due to the large libv8 files.
 But we still want them to be consistent across builds, something that needs to happen after the built files have been committed.
 Once this is done, the upgrade is complete.
 
-Releasing the library is a matter of running the [release](https://github.com/tommie/v8go/.github/workflow/release.yml) workflow.
+Releasing the library is a matter of running the [release](https://github.com/stumble/v8go/.github/workflow/release.yml) workflow.
 It reads `CHANGELOG.md`, creates a Git tag and a GitHub release.
 The tag is what matters for Go modules, and the GitHub release is useful for notifications.
 Releases happen automatically for upgrades.

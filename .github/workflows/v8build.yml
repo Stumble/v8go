@@ -305,7 +305,9 @@ jobs:
     - name: Update go.mod
       run: |
         sha="${{ steps.info.outputs.sha }}"
-        submods=( $(for submod in ${{ steps.info.outputs.submodules }}; do echo "github.com/${{ github.repository }}/$submod@$sha" ; done) )
+        repo="${{ github.repository }}"
+        repo_lower="${repo,,}"
+        submods=( $(for submod in ${{ steps.info.outputs.submodules }}; do echo "github.com/$repo_lower/$submod@$sha" ; done) )
         go get "${submods[@]}"
 
     - id: commit

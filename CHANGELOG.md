@@ -6,6 +6,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Removed
+- Support for Android platform (amd64 and arm64)
+
 ### Added
 
 - Add support for ObjectTemplate.MarkAsUndetectable.

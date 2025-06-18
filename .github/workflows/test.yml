@@ -28,7 +28,7 @@ jobs:
         - stable
         include:
         - os: linux
-          platform: ubuntu-latest
+          platform: ubuntu-22.04
         - os: darwin
           platform: macos-latest
     runs-on: ${{ matrix.platform }}

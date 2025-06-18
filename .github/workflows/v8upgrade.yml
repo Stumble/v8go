@@ -8,7 +8,7 @@ on:
 jobs:
   upgrade:
     name: Upgrade V8
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     outputs:
       has_upgrade: ${{ steps.check_v8.outputs.has_upgrade }}
       latest_v8_hash: ${{ steps.check_v8.outputs.latest_v8_hash }}

@@ -1,0 +1,8 @@
+github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20250618073747-06f5f66a0809 h1:JzRCIOnp8iAYBYnSk+Dc3ymAwWKBIbUurTjpRV0mK/A=
+github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20250618073747-06f5f66a0809/go.mod h1:CfTdhtoHTAglgJBYEHiRpWzn1O8+nl8SvhNb+3gnBdY=
+github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20250618073747-06f5f66a0809 h1:8pviShiBF7ZOyFUZA7xg3aWGLvYxtvYYPnXwRJRi73s=
+github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20250618073747-06f5f66a0809/go.mod h1:6ngHNiucZLWKJXTx5nVtPohpLiERKp5D3U8maklNFTM=
+github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20250618073747-06f5f66a0809 h1:+V/W58zOj6FGSu3pFiBewGVJvgaN0AWPtDo+hQ9Mq98=
+github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20250618073747-06f5f66a0809/go.mod h1:1LCvu+CMQM5Ir3XTmM+MyLo3GPbyiB0bNlUtHeOtCE8=
+github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20250618073747-06f5f66a0809 h1:yec8GBnzkzc57WW6m+nLWoxvphMI47f8/y0BX8FE3lo=
+github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20250618073747-06f5f66a0809/go.mod h1:UC/yWpaXMqESvLouqUU0bubKx3hJtfIxaEwmitww9+s=

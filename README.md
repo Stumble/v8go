@@ -243,7 +243,7 @@ This project also aims to keep up-to-date with the latest (stable) release of V8
 
 ## License
 
-[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B22862%2Fgit%40github.com%3Atommie%2Fv8go.git.svg?type=large)](https://app.fossa.com/projects/custom%2B22862%2Fgit%40github.com%3Atommie%2Fv8go.git?ref=badge_large)
+[![FOSSA Status](https://app.fossa.com/api/projects/custom%2B22862%2Fgit%40github.com%3Astumble%2Fv8go.git.svg?type=large)](https://app.fossa.com/projects/custom%2B22862%2Fgit%40github.com%3Astumble%2Fv8go.git?ref=badge_large)
 
 ## Development
 

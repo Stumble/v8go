@@ -31,7 +31,7 @@ parser.add_argument('--arch',
 parser.add_argument(
     '--os',
     dest='os',
-    choices=['android', 'ios', 'linux', 'darwin', 'windows'],
+    choices=['ios', 'linux', 'darwin', 'windows'],
     default=platform.system().lower())
 args = parser.parse_args()
 
@@ -49,10 +49,9 @@ def get_custom_deps():
         "v8/third_party/colorama/src"           : None,
         "v8/tools/gyp"                          : None,
         "v8/tools/luci-go"                      : None,
+        "v8/third_party/catapult"               : None,
+        "v8/third_party/android_tools"          : None,
     }
-    if args.os != "android":
-        deps["v8/third_party/catapult"] = None
-        deps["v8/third_party/android_tools"] = None
     return deps
 
 gclient_sln = [
@@ -89,7 +88,6 @@ v8_enable_i18n_support=true
 icu_use_data_file=false
 v8_enable_test_features=false
 exclude_unwind_tables=true
-v8_android_log_stdout=true
 """
 
 def v8deps():
@@ -201,7 +199,7 @@ def split_ar(src_fn, dest_fn, dest_obj_dn):
         cwd=v8_path)
     ar_files = ar_files.splitlines()
 
-    # llvm-ar (--clang) for Darwin (but not Android) seems to mangle
+    # llvm-ar (--clang) for Darwin seems to mangle
     # the names to lowercase on extraction, while others do not.
     case_sensitive = args.os != "darwin"
 

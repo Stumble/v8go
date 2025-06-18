@@ -72,11 +72,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [android, darwin, linux]
+        os: [darwin, linux]
         arch: [amd64, arm64]
         include:
-        - os: android
-          platform: ubuntu-latest
         - os: linux
           platform: ubuntu-latest
         - os: darwin

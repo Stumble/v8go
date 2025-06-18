@@ -7,6 +7,15 @@
 
 <img src="gopher.jpg" width="200px" alt="V8 Gopher based on original artwork from the amazing Renee French" style="float:right" />
 
+## Relation to `tommie/v8go`
+
+This is a fork of https://github.com/tommie/v8go. We will constantly rebase to the upstream.
+
+Major differences include
+
+* Remove Android amd64/arm64 support. (smaller module size for go)
+* For Linux, we will use the current "stable" of Debian as the base.
+
 ## Relation to `rogchap.com/v8go`
 
 This is a fork of https://github.com/rogchap/v8go at v0.9.0.

@@ -66,6 +66,16 @@ func (i *Isolate) TerminateExecution() {
 	C.IsolateTerminateExecution(i.ptr)
 }
 
+// CancelTerminateExecution resumes execution capability in an isolate whose
+// execution was forcefully terminated with TerminateExecution. It may resume
+// the isolate even while JavaScript frames remain on the stack, so it should
+// only be called after the embedder that owns the termination has handled it.
+// It may be called from any thread without acquiring a V8 Locker. The caller
+// must ensure the isolate remains alive and coordinate with Dispose.
+func (i *Isolate) CancelTerminateExecution() {
+	C.IsolateCancelTerminateExecution(i.ptr)
+}
+
 // IsExecutionTerminating returns whether V8 is currently terminating
 // Javascript execution. If true, there are still JavaScript frames
 // on the stack and the termination exception is still active.

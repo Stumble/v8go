@@ -10,9 +10,44 @@ import (
 	"math/rand"
 	"strings"
 	"testing"
+	"time"
 
 	v8 "github.com/stumble/v8go"
 )
+
+const isolateTerminationTestTimeout = 2 * time.Second
+
+type isolateTerminationWatchResult struct {
+	started  bool
+	timedOut bool
+	stopped  bool
+}
+
+func startIsolateTerminationWatchdog(
+	iso *v8.Isolate,
+	started <-chan struct{},
+	stop <-chan struct{},
+) <-chan isolateTerminationWatchResult {
+	done := make(chan isolateTerminationWatchResult, 1)
+	go func() {
+		timer := time.NewTimer(isolateTerminationTestTimeout)
+		defer timer.Stop()
+
+		result := isolateTerminationWatchResult{}
+		select {
+		case <-started:
+			result.started = true
+			iso.TerminateExecution()
+		case <-timer.C:
+			result.timedOut = true
+			iso.TerminateExecution()
+		case <-stop:
+			result.stopped = true
+		}
+		done <- result
+	}()
+	return done
+}
 
 func TestIsolateTerminateExecution(t *testing.T) {
 	t.Parallel()
@@ -49,6 +84,134 @@ func TestIsolateTerminateExecution(t *testing.T) {
 
 	if !terminating {
 		t.Error("expected execution to have been terminating in function")
+	}
+}
+
+func TestIsolateCancelTerminateExecutionRecoversParentAndChild(t *testing.T) {
+	iso := v8.NewIsolate()
+	defer iso.Dispose()
+
+	var childStarted chan<- struct{}
+	childGlobal := v8.NewObjectTemplate(iso)
+	childGlobal.Set("started", v8.NewFunctionTemplate(iso, func(*v8.FunctionCallbackInfo) *v8.Value {
+		select {
+		case childStarted <- struct{}{}:
+		default:
+		}
+		return nil
+	}))
+	child := v8.NewContext(iso, childGlobal)
+	defer child.Close()
+
+	type cycleResult struct {
+		childErr                error
+		watch                   isolateTerminationWatchResult
+		watchJoinTimedOut       bool
+		terminatingBeforeCancel bool
+		terminatingAfterCancel  bool
+		childRecoveryValue      int64
+		childRecoveryErr        error
+	}
+	var cycles []cycleResult
+
+	parentGlobal := v8.NewObjectTemplate(iso)
+	parentGlobal.Set("runChild", v8.NewFunctionTemplate(iso, func(*v8.FunctionCallbackInfo) *v8.Value {
+		started := make(chan struct{}, 1)
+		stop := make(chan struct{})
+		childStarted = started
+		watchDone := startIsolateTerminationWatchdog(iso, started, stop)
+
+		result := cycleResult{}
+		_, result.childErr = child.RunScript("started(); while (true) {}", "child.js")
+		childStarted = nil
+		close(stop)
+
+		joinTimer := time.NewTimer(isolateTerminationTestTimeout)
+		select {
+		case result.watch = <-watchDone:
+			if !joinTimer.Stop() {
+				select {
+				case <-joinTimer.C:
+				default:
+				}
+			}
+		case <-joinTimer.C:
+			result.watchJoinTimedOut = true
+		}
+		if result.watchJoinTimedOut {
+			cycles = append(cycles, result)
+			return nil
+		}
+
+		result.terminatingBeforeCancel = iso.IsExecutionTerminating()
+		iso.CancelTerminateExecution()
+		result.terminatingAfterCancel = iso.IsExecutionTerminating()
+
+		value, err := child.RunScript("40 + 2", "child-recovered-in-callback.js")
+		result.childRecoveryErr = err
+		if err == nil {
+			result.childRecoveryValue = value.Integer()
+		}
+		cycles = append(cycles, result)
+		return nil
+	}))
+	parent := v8.NewContext(iso, parentGlobal)
+	defer parent.Close()
+	sibling := v8.NewContext(iso)
+	defer sibling.Close()
+
+	for cycle := 0; cycle < 3; cycle++ {
+		value, parentErr := parent.RunScript("runChild(); 40 + 2", fmt.Sprintf("parent-cycle-%d.js", cycle))
+		if len(cycles) != cycle+1 {
+			t.Fatalf("cycle %d: parent callback did not complete", cycle)
+		}
+		result := cycles[cycle]
+		if result.watchJoinTimedOut {
+			t.Fatalf("cycle %d: termination watcher did not join", cycle)
+		}
+		if result.watch.timedOut {
+			t.Fatalf("cycle %d: watchdog fired before child signalled start", cycle)
+		}
+		if result.watch.stopped || !result.watch.started {
+			t.Fatalf("cycle %d: child start handshake did not complete: %+v", cycle, result.watch)
+		}
+		if result.childErr == nil || !strings.HasPrefix(result.childErr.Error(), "ExecutionTerminated") {
+			t.Fatalf("cycle %d: unexpected child error: %v", cycle, result.childErr)
+		}
+		if !result.terminatingBeforeCancel {
+			t.Fatalf("cycle %d: expected active termination while parent JavaScript frame remained", cycle)
+		}
+		if result.terminatingAfterCancel {
+			t.Fatalf("cycle %d: expected CancelTerminateExecution to clear termination", cycle)
+		}
+		if result.childRecoveryErr != nil {
+			t.Fatalf("cycle %d: child did not recover inside parent callback: %v", cycle, result.childRecoveryErr)
+		}
+		if result.childRecoveryValue != 42 {
+			t.Fatalf("cycle %d: child returned %d inside parent callback, want 42", cycle, result.childRecoveryValue)
+		}
+		if parentErr != nil {
+			t.Fatalf("cycle %d: parent JavaScript did not continue after callback: %v", cycle, parentErr)
+		}
+		if got := value.Integer(); got != 42 {
+			t.Fatalf("cycle %d: parent returned %d, want 42", cycle, got)
+		}
+
+		value, err := child.RunScript("6 * 7", "child-recovered.js")
+		if err != nil {
+			t.Fatalf("cycle %d: child context did not remain reusable: %v", cycle, err)
+		}
+		if got := value.Integer(); got != 42 {
+			t.Fatalf("cycle %d: child context returned %d, want 42", cycle, got)
+		}
+
+		value, err = sibling.RunScript("6 * 7", "sibling-recovered.js")
+		if err != nil {
+			t.Fatalf("cycle %d: sibling context did not recover: %v", cycle, err)
+		}
+		if got := value.Integer(); got != 42 {
+			t.Fatalf("cycle %d: sibling context returned %d, want 42", cycle, got)
+		}
 	}
 }
 

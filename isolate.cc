@@ -92,6 +92,10 @@ void IsolateTerminateExecution(IsolatePtr iso) {
   iso->TerminateExecution();
 }
 
+void IsolateCancelTerminateExecution(IsolatePtr iso) {
+  iso->CancelTerminateExecution();
+}
+
 int IsolateIsExecutionTerminating(IsolatePtr iso) {
   return iso->IsExecutionTerminating();
 }

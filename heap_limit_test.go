@@ -7,6 +7,7 @@ package v8go_test
 import (
 	"os"
 	"os/exec"
+	"strings"
 	"testing"
 
 	v8 "github.com/stumble/v8go"
@@ -71,7 +72,15 @@ func TestHeapLimitWithoutOptionEndsTheProcess(t *testing.T) {
 	if err == nil {
 		t.Fatalf("expected the child to be killed by V8's heap limit, but it exited cleanly:\n%s", output)
 	}
-	t.Logf("child died as expected: %v", err)
+	// "It died" is not the assertion. A child that failed to load V8, panicked in
+	// the harness, or crashed for any unrelated reason also exits non-zero, and
+	// this test would then pass while proving nothing. V8 prints its own fatal
+	// banner before ending the process; require it.
+	if !strings.Contains(string(output), "Fatal JavaScript out of memory") ||
+		!strings.Contains(string(output), "Reached heap limit") {
+		t.Fatalf("child died (%v) but not from V8's heap limit; output was:\n%s", err, output)
+	}
+	t.Logf("child died from V8's heap limit as expected: %v", err)
 }
 
 // With the option, the same allocation must stop the SCRIPT and leave the
@@ -181,7 +190,7 @@ func TestHeapLimitStaysRaisedWhileTheMemoryIsStillHeld(t *testing.T) {
 	if stats.HeapSizeLimit <= before {
 		t.Errorf("expected the ceiling to stay raised while %d bytes are still held", stats.UsedHeapSize)
 	}
-	if stats.UsedHeapSize < uint64(before)/2 {
+	if stats.UsedHeapSize < before/2 {
 		t.Errorf("this test only means something while the memory is retained; used=%d", stats.UsedHeapSize)
 	}
 }

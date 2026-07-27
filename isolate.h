@@ -50,7 +50,12 @@ typedef struct {
 } IsolateConstraints;
 typedef IsolateConstraints* IsolateConstraintsPtr;
 
-extern IsolatePtr NewIsolate(IsolateConstraintsPtr constraints);
+// terminate_on_heap_limit selects what happens when the isolate reaches its
+// heap limit. Zero keeps V8's own behaviour: FatalProcessOutOfMemory, which
+// ends the PROCESS. Non-zero installs a near-heap-limit callback that
+// terminates only the running script, leaving the process and every other
+// isolate alive.
+extern IsolatePtr NewIsolate(IsolateConstraintsPtr constraints, int terminate_on_heap_limit);
 extern void IsolatePerformMicrotaskCheckpoint(IsolatePtr ptr);
 extern void IsolateDispose(IsolatePtr ptr);
 extern void IsolateTerminateExecution(IsolatePtr ptr);

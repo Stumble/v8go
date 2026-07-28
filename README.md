@@ -162,10 +162,27 @@ case <- time.After(200 * time.Milliseconds):
 ### Setting memory limits
 V8 supports setting a hard limit on Javascript memory usage.
 To do so, add a call to `WithResourceConstraints` to the `NewIsolate` invocation.
-If the limit is hit, this results in a call to `TerminateExecution` as shown above.
+
+By default, reaching that limit ends the **process**: V8 raises
+`FatalProcessOutOfMemory`, exactly as it does without v8go. That is often what
+you want for a program's main isolate — exit, and let whatever supervises it
+start a clean one, rather than continue in a degraded state.
 
 ```go
 vm := v8.NewIsolate(v8.WithResourceConstraints(8*1024*1024, 16*1024*1024))
+// a script that exhausts this heap ends the process
+```
+
+Add `WithTerminateOnHeapLimit` to stop the running **script** instead, leaving
+the process and every other isolate alive. This is the right choice for an
+isolate running untrusted or disposable work, where one runaway task must not
+take everything else down with it.
+
+```go
+vm := v8.NewIsolate(
+    v8.WithResourceConstraints(8*1024*1024, 16*1024*1024),
+    v8.WithTerminateOnHeapLimit(),
+)
 ctx := v8.NewContext(vm)
 val, err = ctx.RunScript(`
     const data = [];
@@ -176,6 +193,13 @@ val, err = ctx.RunScript(`
   `, "memory-test.js")
 // err is 'ExecutionTerminated: script execution has been terminated'
 ```
+
+Stopping the script requires temporarily raising the heap limit — V8 allocates
+while unwinding, and refusing it there crashes the VM — so an isolate that has
+just hit the limit is briefly above its ceiling. V8 restores the configured value
+once the heap falls back below half of it. If the terminated script's
+allocations are still reachable, the limit stays raised until they are released,
+because the isolate really is holding that memory.
 
 ### CPU Profiler
 

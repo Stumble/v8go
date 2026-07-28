@@ -463,10 +463,12 @@ func makeObject() interface{} {
 func TestNewIsolateWithConstraints(t *testing.T) {
 	t.Parallel()
 
-	iso := v8.NewIsolate(v8.WithResourceConstraints(
-		8*1024*1024,
-		16*1024*1024,
-	))
+	// WithTerminateOnHeapLimit is what keeps this test from ending the process:
+	// constraints alone leave V8's own FatalProcessOutOfMemory in place.
+	iso := v8.NewIsolate(
+		v8.WithResourceConstraints(8*1024*1024, 16*1024*1024),
+		v8.WithTerminateOnHeapLimit(),
+	)
 	defer iso.Dispose()
 
 	ctx := v8.NewContext(iso)

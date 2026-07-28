@@ -52,17 +52,45 @@ type IsolateOption func(*isolateConfig)
 
 // isolateConfig holds the configuration for creating an isolate.
 type isolateConfig struct {
-	resourceConstraints *resourceConstraints
+	resourceConstraints  *resourceConstraints
+	terminateOnHeapLimit bool
 }
 
 // WithResourceConstraints sets memory constraints for the isolate.
-// If constraints are set, v8go will try to call `TerminateExecution` when the hard limit is hit.
+//
+// On its own this only bounds the heap. What happens when that bound is reached
+// is V8's default: FatalProcessOutOfMemory, which ends the PROCESS. Pair it with
+// WithTerminateOnHeapLimit to stop just the running script instead.
 func WithResourceConstraints(initialHeapSizeInBytes, maxHeapSizeInBytes uint64) IsolateOption {
 	return func(config *isolateConfig) {
 		config.resourceConstraints = &resourceConstraints{
 			InitialHeapSizeInBytes: initialHeapSizeInBytes,
 			MaxHeapSizeInBytes:     maxHeapSizeInBytes,
 		}
+	}
+}
+
+// WithTerminateOnHeapLimit makes reaching the heap limit terminate the running
+// script rather than the process.
+//
+// V8's default is FatalProcessOutOfMemory: one isolate exhausting its heap takes
+// the whole process down, along with every other isolate in it. For an embedder
+// running untrusted code in a per-task isolate that is the wrong trade, and this
+// option inverts it -- the offending script is terminated, the isolate is left
+// unusable, and everything else keeps running.
+//
+// It is opt-in because the other trade is legitimate too: an embedder whose MAIN
+// isolate exceeds the memory it was configured for often WANTS the process to
+// exit and be restarted by its supervisor, rather than to continue in a degraded
+// state. Leave this off for that isolate and on for disposable ones.
+//
+// Terminating requires temporarily raising the heap limit -- V8 allocates while
+// unwinding, and refusing it there crashes the VM -- so an isolate that has hit
+// the limit is briefly over its ceiling. V8 restores the configured value once
+// the heap drops back below half of it.
+func WithTerminateOnHeapLimit() IsolateOption {
+	return func(config *isolateConfig) {
+		config.terminateOnHeapLimit = true
 	}
 }
 
@@ -89,8 +117,13 @@ func NewIsolate(opts ...IsolateOption) *Isolate {
 		}
 	}
 
+	var cTerminateOnHeapLimit C.int
+	if config.terminateOnHeapLimit {
+		cTerminateOnHeapLimit = 1
+	}
+
 	iso := &Isolate{
-		ptr: C.NewIsolate(cConstraints),
+		ptr: C.NewIsolate(cConstraints, cTerminateOnHeapLimit),
 		cbs: make(map[int]FunctionCallbackWithError),
 	}
 	iso.null = newValueNull(iso)

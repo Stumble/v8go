@@ -41,7 +41,7 @@ size_t NearMemoryLimitCallback(void* data, size_t current_heap_limit, size_t ini
   return current_heap_limit * 2;
 }
 
-IsolatePtr NewIsolate(IsolateConstraintsPtr constraints) {
+IsolatePtr NewIsolate(IsolateConstraintsPtr constraints, int terminate_on_heap_limit) {
   Isolate::CreateParams params;
   params.array_buffer_allocator = default_allocator;
 
@@ -61,8 +61,19 @@ IsolatePtr NewIsolate(IsolateConstraintsPtr constraints) {
 
   iso->SetCaptureStackTraceForUncaughtExceptions(true);
 
-  // Try to catch the OOM condition and stop execution before killing the process
-  iso->AddNearHeapLimitCallback(NearMemoryLimitCallback, iso);
+  if (terminate_on_heap_limit) {
+    // Catch the OOM condition and stop execution instead of killing the process.
+    iso->AddNearHeapLimitCallback(NearMemoryLimitCallback, iso);
+
+    // The callback above must raise the limit -- returning the initial one makes
+    // V8 crash while unwinding -- so the isolate is left over its configured
+    // ceiling once it has fired. Ask V8 to put the configured value back once
+    // the heap has dropped below half of it, which it can do after the
+    // terminated script's garbage is collected. Without this the isolate keeps
+    // the doubled ceiling for the rest of its life, and every further trip
+    // doubles it again.
+    iso->AutomaticallyRestoreInitialHeapLimit(0.5);
+  }
 
   // Create a Context for internal use
   m_ctx* ctx = new m_ctx;

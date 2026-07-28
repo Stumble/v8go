@@ -6,11 +6,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `WithTerminateOnHeapLimit` isolate option: reaching the heap limit terminates
+  the running script rather than the process, and the configured ceiling is
+  restored once the heap drains.
+
 ### Removed
 
 - Support for Android platform (amd64 and arm64)
 
 ### Changed
+
+- **BREAKING**: an isolate created with `WithResourceConstraints` alone now ends
+  the process when it reaches its heap limit, which is V8's own
+  `FatalProcessOutOfMemory` behaviour. Since v0.34.0 every isolate instead
+  terminated the running script, with no way to opt out. Add
+  `WithTerminateOnHeapLimit` to keep that behaviour.
 
 ## [v0.34.0] - 2025-10-07
 

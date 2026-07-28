@@ -84,10 +84,13 @@ func WithResourceConstraints(initialHeapSizeInBytes, maxHeapSizeInBytes uint64) 
 // exit and be restarted by its supervisor, rather than to continue in a degraded
 // state. Leave this off for that isolate and on for disposable ones.
 //
-// Terminating requires temporarily raising the heap limit -- V8 allocates while
-// unwinding, and refusing it there crashes the VM -- so an isolate that has hit
-// the limit is briefly over its ceiling. V8 restores the configured value once
-// the heap drops back below half of it.
+// Terminating requires temporarily raising the heap limit, because V8 retries the
+// allocation that hit it once a new limit is returned. The raise is proportional
+// (double the current limit), which means a single allocation LARGER than the
+// isolate's own limit still ends the process -- see the callback in isolate.cc
+// for the measurements behind that choice. V8 restores the configured value once
+// the heap drops back below half of it, and the raise costs address space rather
+// than resident memory, since execution has already stopped.
 func WithTerminateOnHeapLimit() IsolateOption {
 	return func(config *isolateConfig) {
 		config.terminateOnHeapLimit = true

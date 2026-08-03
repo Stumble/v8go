@@ -1,6 +1,8 @@
 #ifndef V8GO_ISOLATE_H
 #define V8GO_ISOLATE_H
 
+#include <stdint.h>
+
 #include "unbound_script.h"
 
 #ifdef __cplusplus
@@ -61,6 +63,9 @@ extern void IsolateDispose(IsolatePtr ptr);
 extern void IsolateTerminateExecution(IsolatePtr ptr);
 extern void IsolateCancelTerminateExecution(IsolatePtr ptr);
 extern int IsolateIsExecutionTerminating(IsolatePtr ptr);
+extern uint32_t IsolateGetContinuationPreservedEmbedderData(IsolatePtr ptr);
+extern void IsolateSetContinuationPreservedEmbedderData(IsolatePtr ptr,
+                                                        uint32_t token);
 extern IsolateHStatistics IsolationGetHeapStatistics(IsolatePtr ptr);
 
 extern ValuePtr IsolateThrowException(IsolatePtr iso, ValuePtr value);

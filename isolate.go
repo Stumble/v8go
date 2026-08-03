@@ -154,6 +154,23 @@ func (i *Isolate) IsExecutionTerminating() bool {
 	return C.IsolateIsExecutionTerminating(i.ptr) == 1
 }
 
+// GetContinuationPreservedEmbedderData returns the opaque token associated
+// with the currently running continuation. V8 captures this token when it
+// creates a continuation and restores it while that continuation runs.
+//
+// This token-only API is intentionally narrow: embedders can use the token as
+// a key into Go-owned scope data without retaining arbitrary V8 values.
+// Zero means that no token is set.
+func (i *Isolate) GetContinuationPreservedEmbedderData() uint32 {
+	return uint32(C.IsolateGetContinuationPreservedEmbedderData(i.ptr))
+}
+
+// SetContinuationPreservedEmbedderData sets the opaque token V8 will capture
+// on subsequently created continuations. Setting zero clears the token.
+func (i *Isolate) SetContinuationPreservedEmbedderData(token uint32) {
+	C.IsolateSetContinuationPreservedEmbedderData(i.ptr, C.uint32_t(token))
+}
+
 type CompileOptions struct {
 	CachedData *CompilerCachedData
 

@@ -2,6 +2,7 @@
 #include "deps/include/v8-initialization.h"
 #include "deps/include/v8-locker.h"
 #include "deps/include/v8-platform.h"
+#include "deps/include/v8-primitive.h"
 
 #include "context.h"
 #include "isolate.h"
@@ -109,6 +110,26 @@ void IsolateCancelTerminateExecution(IsolatePtr iso) {
 
 int IsolateIsExecutionTerminating(IsolatePtr iso) {
   return iso->IsExecutionTerminating();
+}
+
+uint32_t IsolateGetContinuationPreservedEmbedderData(IsolatePtr iso) {
+  ISOLATE_SCOPE(iso)
+  Local<Value> data = iso->GetContinuationPreservedEmbedderData();
+  if (data.IsEmpty() || !data->IsUint32()) {
+    return 0;
+  }
+  return data.As<Uint32>()->Value();
+}
+
+void IsolateSetContinuationPreservedEmbedderData(IsolatePtr iso,
+                                                 uint32_t token) {
+  ISOLATE_SCOPE(iso)
+  if (token == 0) {
+    iso->SetContinuationPreservedEmbedderData(Undefined(iso));
+    return;
+  }
+  iso->SetContinuationPreservedEmbedderData(
+      Integer::NewFromUnsigned(iso, token));
 }
 
 IsolateHStatistics IsolationGetHeapStatistics(IsolatePtr iso) {

@@ -590,6 +590,104 @@ func TestValueSameValue(t *testing.T) {
 	}
 }
 
+func TestValueIsConstructor(t *testing.T) {
+	t.Parallel()
+	iso := v8.NewIsolate()
+	defer iso.Dispose()
+	ctx := v8.NewContext(iso)
+	defer ctx.Close()
+
+	tests := []struct {
+		name   string
+		source string
+		want   bool
+	}{
+		{name: "ordinary function", source: `(function () {})`, want: true},
+		{name: "class", source: `(class {})`, want: true},
+		{name: "bound constructor", source: `(function C() {}).bind(undefined)`, want: true},
+		{name: "constructor proxy", source: `new Proxy(function C() {}, {})`, want: true},
+		{name: "Object builtin", source: `Object`, want: true},
+		{name: "arrow", source: `() => {}`, want: false},
+		{name: "bound arrow", source: `(() => {}).bind(undefined)`, want: false},
+		{name: "async function", source: `(async function () {})`, want: false},
+		{name: "generator", source: `(function* () {})`, want: false},
+		{name: "plain object", source: `({})`, want: false},
+		{name: "number", source: `1`, want: false},
+		{name: "symbol", source: `Symbol()`, want: false},
+		{name: "bigint", source: `1n`, want: false},
+		{name: "arrow proxy", source: `new Proxy(() => {}, {})`, want: false},
+		{name: "undefined", source: `undefined`, want: false},
+		{name: "null", source: `null`, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			value, err := ctx.RunScript(tt.source, "is_constructor.js")
+			fatalIf(t, err)
+			defer value.Release()
+			if got := value.IsConstructor(); got != tt.want {
+				t.Fatalf("IsConstructor() = %t, want %t", got, tt.want)
+			}
+		})
+	}
+
+	goConstructor := v8.NewFunctionTemplate(iso, func(info *v8.FunctionCallbackInfo) *v8.Value {
+		return v8.Undefined(info.Context().Isolate())
+	}).GetFunction(ctx)
+	defer goConstructor.Release()
+	if !goConstructor.IsConstructor() {
+		t.Fatal("a FunctionTemplate function must be constructible")
+	}
+}
+
+func TestValueIsConstructorDoesNotInvokeProxyTraps(t *testing.T) {
+	t.Parallel()
+	iso := v8.NewIsolate()
+	defer iso.Dispose()
+	ctx := v8.NewContext(iso)
+	defer ctx.Close()
+
+	_, err := ctx.RunScript(`
+		globalThis.constructorTrapCounts = {get: 0, getPrototypeOf: 0, construct: 0};
+		const hostileHandler = {
+			get() { constructorTrapCounts.get++; throw new Error("get trap ran"); },
+			getPrototypeOf() {
+				constructorTrapCounts.getPrototypeOf++;
+				throw new Error("getPrototypeOf trap ran");
+			},
+			construct() {
+				constructorTrapCounts.construct++;
+				throw new Error("construct trap ran");
+			},
+		};
+		globalThis.hostileConstructor = new Proxy(function C() {}, hostileHandler);
+		globalThis.hostileArrow = new Proxy(() => {}, hostileHandler);
+	`, "is_constructor_hostile_proxy.js")
+	fatalIf(t, err)
+
+	constructor, err := ctx.Global().Get("hostileConstructor")
+	fatalIf(t, err)
+	defer constructor.Release()
+	arrow, err := ctx.Global().Get("hostileArrow")
+	fatalIf(t, err)
+	defer arrow.Release()
+	if !constructor.IsConstructor() {
+		t.Fatal("constructor Proxy was misclassified")
+	}
+	if arrow.IsConstructor() {
+		t.Fatal("non-constructor Proxy was misclassified")
+	}
+
+	counts, err := ctx.RunScript(
+		`[constructorTrapCounts.get, constructorTrapCounts.getPrototypeOf, constructorTrapCounts.construct].join(",")`,
+		"is_constructor_trap_counts.js",
+	)
+	fatalIf(t, err)
+	defer counts.Release()
+	if got := counts.String(); got != "0,0,0" {
+		t.Fatalf("IsConstructor executed Proxy traps: %s", got)
+	}
+}
+
 func TestValueIsXXX(t *testing.T) {
 	t.Parallel()
 	iso := v8.NewIsolate()

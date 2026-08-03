@@ -312,6 +312,13 @@ func (v *Value) IsFunction() bool {
 	return C.ValueIsFunction(v.ptr) != 0
 }
 
+// IsConstructor returns true if this value can be used as a constructor.
+// This checks V8's internal [[Construct]] capability without invoking the value
+// or executing JavaScript Proxy traps.
+func (v *Value) IsConstructor() bool {
+	return C.ValueIsConstructor(v.ptr) != 0
+}
+
 // IsObject returns true if this value is an object.
 func (v *Value) IsObject() bool {
 	return v.ctx != nil && C.ValueIsObject(v.ptr) != 0

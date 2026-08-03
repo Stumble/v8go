@@ -8,6 +8,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `Value.IsConstructor` for checking V8's internal `[[Construct]]` capability
+  without invoking the value or executing JavaScript Proxy traps.
 - `WithTerminateOnHeapLimit` isolate option: reaching the heap limit terminates
   the running script rather than the process, and the configured ceiling is
   restored once the heap drains.

@@ -75,6 +75,7 @@ int ValueIsName(ValuePtr ptr);
 int ValueIsString(ValuePtr ptr);
 int ValueIsSymbol(ValuePtr ptr);
 int ValueIsFunction(ValuePtr ptr);
+int ValueIsConstructor(ValuePtr ptr);
 int ValueIsObject(ValuePtr ptr);
 int ValueIsBigInt(ValuePtr ptr);
 int ValueIsBoolean(ValuePtr ptr);

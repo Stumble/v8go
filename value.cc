@@ -5,6 +5,7 @@
 #include "context.h"
 #include "deps/include/v8-context.h"
 #include "deps/include/v8-exception.h"
+#include "deps/include/v8-object.h"
 #include "errors.h"
 #include "isolate-macros.h"
 #include "value-macros.h"
@@ -359,6 +360,11 @@ int ValueIsSymbol(ValuePtr ptr) {
 int ValueIsFunction(ValuePtr ptr) {
   LOCAL_VALUE(ptr);
   return value->IsFunction();
+}
+
+int ValueIsConstructor(ValuePtr ptr) {
+  LOCAL_VALUE(ptr);
+  return value->IsObject() && value.As<Object>()->IsConstructor();
 }
 
 int ValueIsObject(ValuePtr ptr) {

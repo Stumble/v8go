@@ -6,7 +6,6 @@ import platform
 import shutil
 import subprocess
 import sys
-import tempfile
 
 valid_archs = ['arm64', 'amd64']
 # "amd64" is called "x86_64" on everything but Windows.
@@ -295,13 +294,15 @@ def copy_libcxx(build_path, dest_path):
         dest = os.path.join(dest_path, name + "-cr.a")
         if os.path.exists(dest):
             os.unlink(dest)
-        with tempfile.TemporaryDirectory(dir=build_path) as extract_dir:
-            subprocess_check_call([ar_path, "x", src], cwd=extract_dir)
-            objects = sorted(glob.glob(os.path.join(extract_dir, "*")))
-            if not objects:
-                raise RuntimeError("V8 archive is empty: {}".format(src))
-            subprocess_check_call([ar_path, "qcs", dest] + objects,
-                                  cwd=extract_dir)
+        objects = subprocess_check_output_text(
+            [ar_path, "t", src], cwd=build_path).splitlines()
+        if not objects:
+            raise RuntimeError("V8 archive is empty: {}".format(src))
+        # Thin archives only contain paths to their object files and cannot
+        # be extracted. Re-archive those objects to produce a self-contained
+        # regular archive suitable for committing and downstream linking.
+        subprocess_check_call([ar_path, "qcs", dest] + objects,
+                              cwd=build_path)
 
 def allocate_disjoint_files(ar_files, case_sensitive=True):
     ar_file_counts = {} # file -> count

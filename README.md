@@ -300,24 +300,29 @@ This project also aims to keep up-to-date with the latest (stable) release of V8
 
 ### Upgrading the V8 binaries
 
-We have the [v8upgrade](https://github.com/stumble/v8go/.github/workflow/v8upgrade.yml) workflow.
-The workflow is triggered every day or manually.
-When run, it finds the current stable V8 version on https://chromiumdash.appspot.com/.
-If the new version is different from `deps/v8_hash`, it runs `v8build` and `release`.
+We have the [v8upgrade](https://github.com/stumble/v8go/actions/workflows/v8upgrade.yml) workflow.
+The workflow is triggered weekly or manually. When run, it finds the current stable V8
+commit on https://chromiumdash.appspot.com/ and validates the response before comparing it
+with `deps/v8_hash`. If the new version is different, it runs `v8build` and `release`.
 
-The [v8build](https://github.com/stumble/v8go/.github/workflow/v8build.yml) workflow upgrades V8 and builds the libraries.
+The workflow commits generated headers and static libraries to `master`, updates the Go
+submodule versions, and creates the release automatically. It needs the repository's
+Actions workflow to be enabled and the workflow token to have `contents: write` permission;
+those permissions are declared in the workflow files.
+
+The [v8build](https://github.com/stumble/v8go/actions/workflows/v8build.yml) workflow upgrades V8 and builds the libraries.
 It is triggered by the `v8upgrade` workflow, or being run manually.
 Each architecture is a separate job, storing build artifacts that are picked up by the Commit job.
 This job updates the master branch.
 Then it runs `syncsubdeps`.
 
-The [syncsubdeps](https://github.com/stumble/v8go/.github/workflow/syncsubdeps.yml) workflow updates the `go.mod` file to point to the new commit.
+The `syncsubdeps` job in `v8build` updates the `go.mod` file to point to the new commit.
 Each architecture in `deps/` is its own Go module.
 This is needed to work around size constraints in Go module handling due to the large libv8 files.
 But we still want them to be consistent across builds, something that needs to happen after the built files have been committed.
 Once this is done, the upgrade is complete.
 
-Releasing the library is a matter of running the [release](https://github.com/stumble/v8go/.github/workflow/release.yml) workflow.
+Releasing the library is a matter of running the [release](https://github.com/stumble/v8go/actions/workflows/release.yml) workflow.
 It reads `CHANGELOG.md`, creates a Git tag and a GitHub release.
 The tag is what matters for Go modules, and the GitHub release is useful for notifications.
 Releases happen automatically for upgrades.

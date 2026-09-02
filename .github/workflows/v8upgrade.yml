@@ -3,12 +3,18 @@ name: V8 Upgrade
 on:
   workflow_dispatch:
   schedule:
-  - cron: '0 0 * * *' # Run every day
+  - cron: '0 0 * * 1' # Run every Monday
+
+concurrency:
+  group: v8-upgrade
+  cancel-in-progress: false
 
 jobs:
   upgrade:
     name: Upgrade V8
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     outputs:
       has_upgrade: ${{ steps.check_v8.outputs.has_upgrade }}
       latest_v8_hash: ${{ steps.check_v8.outputs.latest_v8_hash }}
@@ -25,35 +31,65 @@ jobs:
 
     - id: check_v8
       name: Check Latest Stable Chromium V8
+      env:
+        V8_RELEASES_URL: https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=Linux&num=1&offset=0
       run: |
-        set -o pipefail
-        wget -q -O- "https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=Linux&num=1&offset=0" | jq -r ".[0].hashes.v8" >deps/v8_hash
-        echo "latest_v8_hash=$(<deps/v8_hash)" >>"$GITHUB_OUTPUT"
-        bad_reason="$(awk -vhash="$(<deps/v8_hash)" '!$0 { next; } $1 == hash { $1 = ""; print substr($0, 2); }' deps/bad_v8_hashes)"
-        if [ -n "$bad_reason" ]; then
-          echo "has_upgrade=false" >>"$GITHUB_OUTPUT"
-          echo "reason=$bad_reason" >>"$GITHUB_OUTPUT"
+        set -euo pipefail
+
+        # Fail closed if Chromium changes the response shape or the request
+        # returns an error. Never feed an empty, null, or malformed hash into
+        # the V8 build workflow.
+        latest_v8_hash="$(curl --fail --retry 3 --retry-all-errors --silent --show-error "$V8_RELEASES_URL" | \
+          jq -er '.[0].hashes.v8 | select(type == "string" and test("^[0-9a-f]{40}$"))')"
+        current_v8_hash="$(tr -d '[:space:]' < deps/v8_hash)"
+        bad_reason="$(awk -v hash="$latest_v8_hash" \
+          'NF && $1 == hash { sub(/^[^[:space:]]+[[:space:]]*/, ""); print; exit }' \
+          deps/bad_v8_hashes)"
+
+        printf 'latest_v8_hash=%s\n' "$latest_v8_hash" >>"$GITHUB_OUTPUT"
+        printf 'current_v8_hash=%s\n' "$current_v8_hash" >>"$GITHUB_OUTPUT"
+        if [[ -n "$bad_reason" ]]; then
+          printf 'has_upgrade=false\n' >>"$GITHUB_OUTPUT"
+          printf 'reason=%s\n' "$bad_reason" >>"$GITHUB_OUTPUT"
+        elif [[ "$current_v8_hash" == "$latest_v8_hash" ]]; then
+          printf 'has_upgrade=false\n' >>"$GITHUB_OUTPUT"
         else
-          echo "has_upgrade=$(git status --porcelain | grep -q . && echo true || echo false)" >>"$GITHUB_OUTPUT"
+          printf 'has_upgrade=true\n' >>"$GITHUB_OUTPUT"
         fi
 
     - name: Create Summary
       if: ${{ steps.check_v8.outputs.has_upgrade == 'true' }}
+      env:
+        CURRENT_V8_HASH: ${{ steps.check_v8.outputs.current_v8_hash }}
+        LATEST_V8_HASH: ${{ steps.check_v8.outputs.latest_v8_hash }}
       run: |
-        echo "New V8 hash: ${{ steps.check_v8.outputs.latest_v8_hash }}" >>"$GITHUB_STEP_SUMMARY"
+        {
+          echo "Current V8 hash: $CURRENT_V8_HASH"
+          echo "New V8 hash: $LATEST_V8_HASH"
+        } >>"$GITHUB_STEP_SUMMARY"
 
     - name: Create Summary (no upgrade)
       if: ${{ steps.check_v8.outputs.has_upgrade != 'true' }}
+      env:
+        CURRENT_V8_HASH: ${{ steps.check_v8.outputs.current_v8_hash }}
+        LATEST_V8_HASH: ${{ steps.check_v8.outputs.latest_v8_hash }}
+        REASON: ${{ steps.check_v8.outputs.reason }}
       run: |
-        echo "No V8 upgrade available." >>"$GITHUB_STEP_SUMMARY"
-        if [ -n "${{ steps.check_v8.outputs.reason }}" ]; then
-          echo "Reason: ${{ steps.check_v8.outputs.reason }}" >>"$GITHUB_STEP_SUMMARY"
+        {
+          echo "Current V8 hash: $CURRENT_V8_HASH"
+          echo "Latest V8 hash: $LATEST_V8_HASH"
+          echo "No V8 upgrade available."
+        } >>"$GITHUB_STEP_SUMMARY"
+        if [[ -n "$REASON" ]]; then
+          echo "Reason: $REASON" >>"$GITHUB_STEP_SUMMARY"
         fi
 
   build:
     name: Run V8 Build
     needs: upgrade
     if: ${{ needs.upgrade.outputs.has_upgrade == 'true' }}
+    permissions:
+      contents: write
     uses: ./.github/workflows/v8build.yml
     with:
       v8_hash: ${{ needs.upgrade.outputs.latest_v8_hash }}
@@ -62,6 +98,8 @@ jobs:
     name: Make A Release
     needs: build
     if: ${{ needs.build.outputs.committed == 'true' && github.ref == 'refs/heads/master' }}
+    permissions:
+      contents: write
     uses: ./.github/workflows/release.yml
     with:
       draft: false

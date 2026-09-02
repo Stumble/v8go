@@ -24,6 +24,8 @@ jobs:
   build_common:
     name: Build Architecture Independent Files
     runs-on: ubuntu-22.04
+    permissions:
+      contents: read
     outputs:
       v8_hash: ${{ steps.update_v8.outputs.v8_hash }}
     steps:
@@ -47,12 +49,20 @@ jobs:
 
     - name: Apply Patches
       run: |
-        if [ -d patches ]; then
-          for f in patches/*.patch; do
+        set -euo pipefail
+        shopt -s nullglob
+        patches=(patches/*.patch)
+        for f in "${patches[@]}"; do
+          if patch --dry-run --forward --batch -p1 -i "$f" >/dev/null 2>&1; then
             echo "Apply $f"
-            patch -p1 -i "$f"
-          done
-        fi
+            patch --forward --batch -p1 -i "$f"
+          elif patch --dry-run --reverse --batch -p1 -i "$f" >/dev/null 2>&1; then
+            echo "Skip already-applied patch $f"
+          else
+            echo "Patch no longer applies: $f" >&2
+            exit 1
+          fi
+        done
 
     - name: Create include files
       run: cd deps && ./build_common.py
@@ -69,6 +79,8 @@ jobs:
   build:
     name: Build V8 for ${{ matrix.os }} ${{ matrix.arch }}
     needs: build_common
+    permissions:
+      contents: read
     strategy:
       fail-fast: false
       matrix:
@@ -124,12 +136,20 @@ jobs:
 
     - name: Apply Patches
       run: |
-        if [ -d patches ]; then
-          for f in patches/*.patch; do
+        set -euo pipefail
+        shopt -s nullglob
+        patches=(patches/*.patch)
+        for f in "${patches[@]}"; do
+          if patch --dry-run --forward --batch -p1 -i "$f" >/dev/null 2>&1; then
             echo "Apply $f"
-            patch -p1 -i "$f"
-          done
-        fi
+            patch --forward --batch -p1 -i "$f"
+          elif patch --dry-run --reverse --batch -p1 -i "$f" >/dev/null 2>&1; then
+            echo "Skip already-applied patch $f"
+          else
+            echo "Patch no longer applies: $f" >&2
+            exit 1
+          fi
+        done
 
     - name: Configure CCache
       run: |
@@ -143,7 +163,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ~/.ccache
-        key: libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:${{ hashFiles('deps/v8_hash') }}:${{ runner.os }}
+        key: libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ runner.os }}
         restore-keys: |
           libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:
           ${{ runner.os }}:${{ matrix.os }}:${{ matrix.arch }}:libv8:ccache
@@ -151,8 +171,8 @@ jobs:
     - name: Restore V8 Build Cache
       uses: actions/cache@v4
       with:
-        path: deps/v8/build
-        key: libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:${{ hashFiles('deps/v8_hash') }}:${{ runner.os }}
+        path: deps/.build/${{ matrix.os }}_${{ matrix.arch }}
+        key: libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ runner.os }}
         restore-keys: |
           libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:
 
@@ -160,7 +180,10 @@ jobs:
       run: cd deps/depot_tools && git config --unset-all remote.origin.fetch; git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*
 
     - name: Build V8 (${{ matrix.os }})
-      run: cd deps && ./build.py --ccache --verbose --arch ${{ matrix.arch }} --os ${{ matrix.os }}
+      # Current V8 stable is tested with Clang on Linux as well as macOS.
+      # This also avoids the known GCC/ARM64 failures recorded in
+      # deps/bad_v8_hashes.
+      run: cd deps && ./build.py --ccache --verbose --clang --arch ${{ matrix.arch }} --os ${{ matrix.os }}
 
     - name: Show CCache Status
       run: ccache -s
@@ -180,6 +203,8 @@ jobs:
     name: Commit Built Artifacts
     needs: [build, build_common]
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     outputs:
       committed: ${{ steps.commit.outputs.committed }}
       sha: ${{ steps.create_summary.outputs.sha }}
@@ -270,6 +295,8 @@ jobs:
     needs: commit
     if: ${{ needs.commit.outputs.committed == 'true' }}
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     outputs:
       committed: ${{ steps.commit.outputs.committed }}
       sha: ${{ steps.create_summary.outputs.sha }}

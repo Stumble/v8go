@@ -30,9 +30,10 @@ def format_ldflags_libs(os, arch, libs):
     # However, XCode ld(1) does not support it, but says it "will continually search a static library": https://keith.github.io/xcode-man-pages/ld.1.html
     start_group = "-Wl,--start-group " if os != "darwin" else ""
     end_group = " -Wl,--end-group" if os != "darwin" else ""
+    framework = " -framework CoreFoundation" if os == "darwin" else ""
     return (start_group +
         " ".join("-l{}".format(lib.replace(".a", "").replace("libv8", "v8")) for lib in libs) +
-        end_group)
+        end_group + framework)
 
 def generate_imported_mod_file(path, root_module, os, arch, min_go_version):
     with open(path, "wt") as f:

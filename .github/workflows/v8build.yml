@@ -163,19 +163,21 @@ jobs:
         echo "CCACHE_SLOPPINESS=time_macros" >> "$GITHUB_ENV"
 
     - name: Restore CCache
-      uses: actions/cache@v4
+      id: restore-ccache
+      uses: actions/cache/restore@v4
       with:
         path: ~/.ccache
-        key: libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ runner.os }}
+        key: libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py') }}:${{ runner.os }}
         restore-keys: |
           libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:
           ${{ runner.os }}:${{ matrix.os }}:${{ matrix.arch }}:libv8:ccache
 
     - name: Restore V8 Build Cache
-      uses: actions/cache@v4
+      id: restore-v8-build
+      uses: actions/cache/restore@v4
       with:
         path: deps/.build/${{ matrix.os }}_${{ matrix.arch }}
-        key: libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ runner.os }}
+        key: libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py') }}:${{ runner.os }}
         restore-keys: |
           libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:
 
@@ -187,6 +189,20 @@ jobs:
       # This also avoids the known GCC/ARM64 failures recorded in
       # deps/bad_v8_hashes.
       run: cd deps && ./build.py --ccache --verbose --clang --arch ${{ matrix.arch }} --os ${{ matrix.os }}
+
+    - name: Save V8 Build Cache
+      if: always() && steps.restore-v8-build.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: deps/.build/${{ matrix.os }}_${{ matrix.arch }}
+        key: libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py') }}:${{ runner.os }}
+
+    - name: Save CCache
+      if: always() && steps.restore-ccache.outputs.cache-hit != 'true'
+      uses: actions/cache/save@v4
+      with:
+        path: ~/.ccache
+        key: libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py') }}:${{ runner.os }}
 
     - name: Show CCache Status
       run: ccache -s

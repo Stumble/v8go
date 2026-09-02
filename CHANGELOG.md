@@ -17,6 +17,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Support for Android platform (amd64 and arm64)
 
 ### Changed
+- Auto-bumped V8 to 15.2.124.19.
 
 - **BREAKING**: an isolate created with `WithResourceConstraints` alone now ends
   the process when it reaches its heap limit, which is V8's own

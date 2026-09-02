@@ -17,7 +17,7 @@ on:
       draft:
         description: Whether to make this a draft release, or a finished release.
         default: false
-        required: true
+        required: false
         type: boolean
       sha:
         description: "The commit to check out at. Defaults to the parent workflow's github.sha."
@@ -35,12 +35,16 @@ on:
 jobs:
   test:
     name: Test
+    permissions:
+      contents: read
     uses: ./.github/workflows/test.yml
     with:
       sha: ${{ inputs.sha }}
 
   leakcheck:
     name: Test (leakcheck)
+    permissions:
+      contents: read
     uses: ./.github/workflows/leakcheck.yml
     with:
       sha: ${{ inputs.sha }}
@@ -49,6 +53,8 @@ jobs:
     name: Release
     needs: [test, leakcheck]
     runs-on: ubuntu-22.04
+    permissions:
+      contents: write
     outputs:
       committed: ${{ steps.commit_changelog.outputs.committed }}
       sha: ${{ steps.commit_changelog.outputs.commit_long_sha }}

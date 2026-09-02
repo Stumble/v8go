@@ -19,9 +19,14 @@ def get_all_libs(manifest_glob):
         os_arch = os.path.basename(os.path.dirname(manifest_path))
         os_arch = os_arch.split("_", 1)
         libs = get_libs(manifest_path)
-        yield os_arch, manifest_path, libs
+        lib_dir = os.path.dirname(manifest_path)
+        custom_libs = [
+            name for name in ("libc++-cr.a", "libc++abi-cr.a")
+            if os.path.isfile(os.path.join(lib_dir, name))
+        ]
+        yield os_arch, manifest_path, libs, custom_libs
 
-def format_ldflags_libs(os, arch, libs):
+def format_ldflags_libs(os, arch, libs, custom_libs):
     # Since libraries are split without caring about dependencies,
     # we need to make it a group.
     #
@@ -32,7 +37,7 @@ def format_ldflags_libs(os, arch, libs):
     end_group = " -Wl,--end-group" if os != "darwin" else ""
     framework = " -framework CoreFoundation" if os == "darwin" else ""
     return (start_group +
-        " ".join("-l{}".format(lib.replace(".a", "").replace("libv8", "v8")) for lib in libs) +
+        " ".join("-l{}".format(lib.replace(".a", "").replace("libv8", "v8")) for lib in libs + custom_libs) +
         end_group + framework)
 
 def generate_imported_mod_file(path, root_module, os, arch, min_go_version):
@@ -74,7 +79,7 @@ import _ "{root}/deps/{os}_{arch}"
 """
 
 def main():
-    for (os_, arch), manifest_path, libs in get_all_libs(args.manifest_paths):
+    for (os_, arch), manifest_path, libs, custom_libs in get_all_libs(args.manifest_paths):
         generate_imported_mod_file(
             os.path.join(os.path.dirname(manifest_path), "go.mod"),
             args.root_module.format(os=os_, arch=arch),
@@ -86,7 +91,7 @@ def main():
             os.path.join(os.path.dirname(manifest_path), "cgo.go"),
             os_,
             arch,
-            format_ldflags_libs(os_, arch, libs))
+            format_ldflags_libs(os_, arch, libs, custom_libs))
 
         generate_importing_go_file(
             args.cgo_path_template.format(os=os_, arch=arch),

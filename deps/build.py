@@ -6,6 +6,7 @@ import platform
 import shutil
 import subprocess
 import sys
+import tempfile
 
 valid_archs = ['arm64', 'amd64']
 # "amd64" is called "x86_64" on everything but Windows.
@@ -73,7 +74,7 @@ target_os="%s"
 target_cpu="%s"
 v8_target_cpu="%s"
 clang_use_chrome_plugins=false
-use_custom_libcxx=false
+use_custom_libcxx=%s
 use_sysroot=false
 use_glib=false
 symbol_level=%s
@@ -88,6 +89,7 @@ v8_enable_i18n_support=true
 icu_use_data_file=false
 v8_enable_test_features=false
 exclude_unwind_tables=true
+v8_enable_temporal_support=false
 """
 
 def v8deps():
@@ -99,6 +101,23 @@ def v8deps():
                         cwd=deps_path,
                         env=env)
 
+def apply_v8_compatibility_patches():
+    # Chromium's bundled LLVM can emit CREL relocations that the GNU linker
+    # used by downstream cgo consumers cannot read. Newer V8 revisions expose
+    # the flag in build/config/compiler/BUILD.gn; remove it when present.
+    compiler_file = os.path.join(
+        v8_path, "build", "config", "compiler", "BUILD.gn")
+    if os.path.exists(compiler_file):
+        with open(compiler_file, "rt") as f:
+            source = f.read()
+        marker = 'cflags += [ "-Wa,--crel,--allow-experimental-crel" ]'
+        if marker in source:
+            source = source.replace(
+                marker,
+                "# v8go: CREL disabled for GNU linker compatibility")
+            with open(compiler_file, "wt") as f:
+                f.write(source)
+
 def build_gn_args():
     is_debug = args.debug
     arch = v8_arch()
@@ -107,6 +126,9 @@ def build_gn_args():
     #   compiled library by an order of magnitude and further slow down compilation
     symbol_level = 1 if args.debug else 0
     strip_debug_info = not args.debug
+    # V8 15.x requires its hardened libc++ when the sandbox is enabled. Keep
+    # the embedder and V8 on the same standard-library ABI on every target.
+    use_custom_libcxx = True
 
     gnargs = gn_args % (
         str(bool(is_debug)).lower(),
@@ -114,6 +136,7 @@ def build_gn_args():
         v8_os(),
         arch,
         arch,
+        str(use_custom_libcxx).lower(),
         symbol_level,
         str(strip_debug_info).lower(),
     )
@@ -258,6 +281,28 @@ def split_ar(src_fn, dest_fn, dest_obj_dn):
         for dest_fn in dest_fns:
             print(dest_fn, file=f)
 
+def copy_libcxx(build_path, dest_path):
+    """Copy V8's libc++ archives as regular archives beside libv8."""
+    ar_path = os.path.abspath(os.path.join(
+        v8_path, "third_party/llvm-build/Release+Asserts/bin/llvm-ar"))
+    for name in ("libc++", "libc++abi"):
+        src = os.path.join(
+            build_path, "obj", "buildtools", "third_party", name,
+            name + ".a")
+        if not os.path.exists(src):
+            raise RuntimeError("V8 did not produce required archive: {}".format(src))
+
+        dest = os.path.join(dest_path, name + "-cr.a")
+        if os.path.exists(dest):
+            os.unlink(dest)
+        with tempfile.TemporaryDirectory(dir=build_path) as extract_dir:
+            subprocess_check_call([ar_path, "x", src], cwd=extract_dir)
+            objects = sorted(glob.glob(os.path.join(extract_dir, "*")))
+            if not objects:
+                raise RuntimeError("V8 archive is empty: {}".format(src))
+            subprocess_check_call([ar_path, "qcs", dest] + objects,
+                                  cwd=extract_dir)
+
 def allocate_disjoint_files(ar_files, case_sensitive=True):
     ar_file_counts = {} # file -> count
     for ar_file in ar_files:
@@ -288,6 +333,7 @@ def allocate_disjoint_files(ar_files, case_sensitive=True):
 
 def main():
     v8deps()
+    apply_v8_compatibility_patches()
     if is_windows:
         apply_mingw_patches()
 
@@ -301,7 +347,8 @@ def main():
     gnargs = build_gn_args()
 
     subprocess_check_call([gn_path, "gen", build_path, "--args=" + gnargs.replace('\n', ' ')], cwd=v8_path)
-    subprocess_check_call([ninja_path, "-v", "-C", build_path, "v8_monolith"], cwd=v8_path)
+    ninja_targets = ["v8_monolith", "libc++", "libc++abi"]
+    subprocess_check_call([ninja_path, "-v", "-C", build_path] + ninja_targets, cwd=v8_path)
 
     dest_path = os.path.join(deps_path, os_arch())
     dest_obj_dn = os.path.join(dest_path, "obj")
@@ -310,6 +357,7 @@ def main():
             os.path.join(build_path, "obj/libv8_monolith.a"),
             os.path.join(dest_path, "libv8.a"),
             dest_obj_dn)
+        copy_libcxx(build_path, dest_path)
     finally:
         if os.path.exists(dest_obj_dn):
             shutil.rmtree(dest_obj_dn)

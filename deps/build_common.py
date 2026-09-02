@@ -25,6 +25,52 @@ env = os.environ.copy()
 v8_path = os.path.join(deps_path, "v8")
 v8_include_path = os.path.join(v8_path, "include")
 deps_include_path = os.path.join(deps_path, "include")
+libcxx_include_path = os.path.join(deps_path, "include_libcxx")
+libcxxabi_include_path = os.path.join(deps_path, "include_libcxxabi")
+
+gclient_solution = [{
+  "name": "v8",
+  "url": "https://chromium.googlesource.com/v8/v8.git",
+  "deps_file": "DEPS",
+  "managed": False,
+  "custom_deps": {
+    "v8/testing/gmock": None,
+    "v8/test/wasm-js": None,
+    "v8/third_party/colorama/src": None,
+    "v8/tools/gyp": None,
+    "v8/tools/luci-go": None,
+    "v8/third_party/catapult": None,
+    "v8/third_party/android_tools": None,
+  },
+  "custom_vars": {"build_for_node": True},
+}]
+
+def sync_v8_dependencies():
+  """Fetch V8's external dependencies needed for libc++ headers."""
+  spec = "solutions = %s\n" % gclient_solution
+  spec += "target_os = ['linux']"
+  sync_env = env.copy()
+  sync_env["PATH"] = os.path.join(deps_path, "depot_tools") + os.pathsep + sync_env["PATH"]
+  subprocess.check_call(
+    ["gclient", "sync", "--force", "--no-history", "--spec", spec],
+    cwd=deps_path,
+    env=sync_env,
+  )
+
+def copy_dependency_headers():
+  """Copy the exact libc++ headers used to build the static libraries."""
+  include_sources = [
+    (os.path.join(v8_path, "third_party", "libc++", "src", "include"),
+     libcxx_include_path),
+    (os.path.join(v8_path, "third_party", "libc++abi", "src", "include"),
+     libcxxabi_include_path),
+  ]
+  for source, destination in include_sources:
+    if not os.path.isdir(source):
+      raise RuntimeError("V8 dependency headers not found: {}".format(source))
+    if os.path.exists(destination):
+      shutil.rmtree(destination)
+    shutil.copytree(source, destination)
 
 def get_directories_names(path):
   flist = []
@@ -72,6 +118,8 @@ def create_vendor_files(src_path, module):
 
 if __name__ == "__main__":
   module = get_module_name()
+  sync_v8_dependencies()
   shutil.rmtree(deps_include_path)
   shutil.copytree(v8_include_path, deps_include_path, dirs_exist_ok=True)
+  copy_dependency_headers()
   create_vendor_files(deps_include_path, module)

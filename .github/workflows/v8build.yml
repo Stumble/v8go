@@ -73,7 +73,10 @@ jobs:
         # The name matches the directory under deps/.
         name: include
         if-no-files-found: error
-        path: deps/include/
+        path: |
+          deps/include/
+          deps/include_libcxx/
+          deps/include_libcxxabi/
         retention-days: 2
 
   build:
@@ -257,9 +260,11 @@ jobs:
         add: |
           - cgo.go
           - CHANGELOG.md
-          - deps/*_*/libv8*.a
+          - deps/*_*/lib*.a
           - deps/*_*/libmanifest
           - deps/include/**
+          - deps/include_libcxx/**
+          - deps/include_libcxxabi/**
           - deps/depot_tools
           - deps/v8
           - deps/v8_hash

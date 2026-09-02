@@ -1,8 +1,16 @@
 github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20250618204609-b802926d07ec h1:SB3uU+OLEooq5xOQztnunCIbCldYisNbgBE+fC6oCgo=
 github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20250618204609-b802926d07ec/go.mod h1:CfTdhtoHTAglgJBYEHiRpWzn1O8+nl8SvhNb+3gnBdY=
+github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20260902191116-13b73d846c3b h1:nCTRUmYAKb8EOKCsNmLe7Ndukd0zttdjAO7Lnwna/Oo=
+github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20260902191116-13b73d846c3b/go.mod h1:CfTdhtoHTAglgJBYEHiRpWzn1O8+nl8SvhNb+3gnBdY=
 github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20250618204609-b802926d07ec h1:JcU1imEKLQnvVPQ444Nl44SNFy69ineoBjXPF8VQ8LI=
 github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20250618204609-b802926d07ec/go.mod h1:6ngHNiucZLWKJXTx5nVtPohpLiERKp5D3U8maklNFTM=
+github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20260902191116-13b73d846c3b h1:sS0ZYFDoB4yjdcVgJLD3pNwDb2aUutpvctH7qaw/2yE=
+github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20260902191116-13b73d846c3b/go.mod h1:6ngHNiucZLWKJXTx5nVtPohpLiERKp5D3U8maklNFTM=
 github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20250618204609-b802926d07ec h1:Wxw+xJCuHEfHROeTas7oPh/u+XPgBUX4ndKYTET2h0E=
 github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20250618204609-b802926d07ec/go.mod h1:1LCvu+CMQM5Ir3XTmM+MyLo3GPbyiB0bNlUtHeOtCE8=
+github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20260902191116-13b73d846c3b h1:bGUkuqYUU1guoj4PthafsYl1gxaBgjFT9Im78d2epIo=
+github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20260902191116-13b73d846c3b/go.mod h1:1LCvu+CMQM5Ir3XTmM+MyLo3GPbyiB0bNlUtHeOtCE8=
 github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20250618204609-b802926d07ec h1:q5+REIAziksb6S7ALAgQf2fU/YylYojz/LcuU+zDOmM=
 github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20250618204609-b802926d07ec/go.mod h1:UC/yWpaXMqESvLouqUU0bubKx3hJtfIxaEwmitww9+s=
+github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20260902191116-13b73d846c3b h1:cr8r0CvufLQ7s62qo0dNhkR3qVhTwugGfc+fuC3vnnM=
+github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20260902191116-13b73d846c3b/go.mod h1:UC/yWpaXMqESvLouqUU0bubKx3hJtfIxaEwmitww9+s=

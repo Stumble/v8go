@@ -43,7 +43,7 @@ def format_ldflags_libs(os, arch, libs, custom_libs):
     # However, XCode ld(1) does not support it, but says it "will continually search a static library": https://keith.github.io/xcode-man-pages/ld.1.html
     start_group = "-Wl,--start-group " if os != "darwin" else ""
     end_group = " -Wl,--end-group" if os != "darwin" else ""
-    framework = " -framework CoreFoundation" if os == "darwin" else ""
+    framework = " -framework CoreFoundation -framework Security" if os == "darwin" else ""
     return (start_group +
         " ".join(format_ldflag(lib) for lib in libs + custom_libs) +
         end_group + framework)

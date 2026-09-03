@@ -27,6 +27,8 @@ v8_include_path = os.path.join(v8_path, "include")
 deps_include_path = os.path.join(deps_path, "include")
 libcxx_include_path = os.path.join(deps_path, "include_libcxx")
 libcxxabi_include_path = os.path.join(deps_path, "include_libcxxabi")
+libcxx_config_path = os.path.join(
+  v8_path, "buildtools", "third_party", "libc++")
 
 gclient_solution = [{
   "name": "v8",
@@ -71,6 +73,12 @@ def copy_dependency_headers():
     if os.path.exists(destination):
       shutil.rmtree(destination)
     shutil.copytree(source, destination)
+
+  for name in ("__config_site", "__assertion_handler"):
+    source = os.path.join(libcxx_config_path, name)
+    if not os.path.isfile(source):
+      raise RuntimeError("V8 libc++ configuration not found: {}".format(source))
+    shutil.copy2(source, libcxx_include_path)
 
 def get_directories_names(path):
   flist = []

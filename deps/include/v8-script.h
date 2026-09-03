@@ -9,6 +9,7 @@
 #include <stdint.h>
 
 #include <memory>
+#include <span>
 #include <tuple>
 #include <vector>
 
@@ -16,7 +17,6 @@
 #include "v8-data.h"          // NOLINT(build/include_directory)
 #include "v8-local-handle.h"  // NOLINT(build/include_directory)
 #include "v8-maybe.h"         // NOLINT(build/include_directory)
-#include "v8-memory-span.h"   // NOLINT(build/include_directory)
 #include "v8-message.h"       // NOLINT(build/include_directory)
 #include "v8config.h"         // NOLINT(build/include_directory)
 
@@ -64,7 +64,13 @@ class V8_EXPORT UnboundScript : public Data {
    */
   Local<Script> BindToCurrentContext();
 
+  /*
+   * A unique id.
+   */
+  int ScriptId() const;
+  V8_DEPRECATE_SOON("Use ScriptId")
   int GetId() const;
+
   Local<Value> GetScriptName();
 
   /**
@@ -104,7 +110,16 @@ class V8_EXPORT UnboundModuleScript : public Data {
    * Data read from magic sourceMappingURL comments.
    */
   Local<Value> GetSourceMappingURL();
+
+  /*
+   * A unique id.
+   */
+  int ScriptId() const;
+
+  static const int kNoScriptId = 0;
 };
+
+static_assert(UnboundModuleScript::kNoScriptId == UnboundScript::kNoScriptId);
 
 /**
  * A location in JavaScript source.
@@ -188,6 +203,13 @@ class V8_EXPORT Module : public Data {
   };
 
   /**
+   * If the module is a Source Text Module, returns the name that was passed
+   * by the embedder as resource_name to the ScriptOrigin. If it's a Synthetic
+   * Module, returns the module_name passed to CreateSyntheticModule().
+   */
+  Local<Value> GetResourceName() const;
+
+  /**
    * Returns the module's current status.
    */
   Status GetStatus() const;
@@ -220,6 +242,13 @@ class V8_EXPORT Module : public Data {
       Local<Context> context, Local<String> specifier,
       Local<FixedArray> import_attributes, Local<Module> referrer);
 
+  using ResolveModuleByIndexCallback = MaybeLocal<Module> (*)(
+      Local<Context> context, size_t module_request_index,
+      Local<Module> referrer);
+  using ResolveSourceByIndexCallback = MaybeLocal<Object> (*)(
+      Local<Context> context, size_t module_request_index,
+      Local<Module> referrer);
+
   /**
    * Instantiates the module and its dependencies.
    *
@@ -230,6 +259,16 @@ class V8_EXPORT Module : public Data {
   V8_WARN_UNUSED_RESULT Maybe<bool> InstantiateModule(
       Local<Context> context, ResolveModuleCallback module_callback,
       ResolveSourceCallback source_callback = nullptr);
+
+  /**
+   * Similar to the variant that takes ResolveModuleCallback and
+   * ResolveSourceCallback, but uses the index into the array that is returned
+   * by GetModuleRequests() instead of the specifier and import attributes to
+   * identify the requests.
+   */
+  V8_WARN_UNUSED_RESULT Maybe<bool> InstantiateModule(
+      Local<Context> context, ResolveModuleByIndexCallback module_callback,
+      ResolveSourceByIndexCallback source_callback = nullptr);
 
   /**
    * Evaluates the module and its dependencies.
@@ -244,11 +283,25 @@ class V8_EXPORT Module : public Data {
   V8_WARN_UNUSED_RESULT MaybeLocal<Value> Evaluate(Local<Context> context);
 
   /**
+   * Evaluates async dependencies of a module and defer its evaluation
+   *
+   * It implements 13.3.10.4.1 ContinueDynamicImport, Step 6.e.
+   * (https://tc39.es/proposal-defer-import-eval/#sec-ContinueDynamicImport).
+   * This will gather all async dependencies of this module and trigger their
+   * evaluation. It returns a Promise that is similar to a Promise.all for all
+   * modules that are going to be evaluated. This module and its sync
+   * dependencies are not going to be evaluated.
+   */
+  V8_WARN_UNUSED_RESULT MaybeLocal<Value> EvaluateForImportDefer(
+      Local<Context> context);
+
+  /**
    * Returns the namespace object of this module.
    *
    * The module's status must be at least kInstantiated.
    */
-  Local<Value> GetModuleNamespace();
+  Local<Value> GetModuleNamespace(
+      v8::ModuleImportPhase phase = v8::ModuleImportPhase::kEvaluation);
 
   /**
    * Returns the corresponding context-unbound module script.
@@ -309,8 +362,15 @@ class V8_EXPORT Module : public Data {
    */
   static Local<Module> CreateSyntheticModule(
       Isolate* isolate, Local<String> module_name,
-      const MemorySpan<const Local<String>>& export_names,
-      SyntheticModuleEvaluationSteps evaluation_steps);
+      const std::span<const Local<String>>& export_names,
+      SyntheticModuleEvaluationSteps evaluation_steps,
+      Local<Data> host_defined_options = Local<Data>());
+
+  /**
+   * Returns the host defined options set during CreateSyntheticModule().
+   * Must only be called on SyntheticModules.
+   */
+  Local<Data> GetSyntheticModuleHostDefinedOptions() const;
 
   /**
    * Set this module's exported value for the name export_name to the specified
@@ -372,6 +432,11 @@ class V8_EXPORT Script : public Data {
    * Returns the corresponding context-unbound script.
    */
   Local<UnboundScript> GetUnboundScript();
+
+  /**
+   * Returns the id of the corresponding context-unbound script.
+   */
+  int ScriptId() const;
 
   /**
    * The name that was passed by the embedder as ResourceName to the
@@ -541,13 +606,18 @@ class V8_EXPORT ScriptCompiler {
     CompilationDetails compilation_details;
   };
 
+  class ExternalSourceStreamBase {
+   public:
+    virtual ~ExternalSourceStreamBase() = default;
+  };
+
   /**
    * For streaming incomplete script data to V8. The embedder should implement a
    * subclass of this class.
    */
-  class V8_EXPORT ExternalSourceStream {
+  class V8_EXPORT ExternalSourceStream : public ExternalSourceStreamBase {
    public:
-    virtual ~ExternalSourceStream() = default;
+    ~ExternalSourceStream() override = default;
 
     /**
      * V8 calls this to request the next chunk of data from the embedder. This
@@ -574,6 +644,49 @@ class V8_EXPORT ScriptCompiler {
   };
 
   /**
+   * For streaming incomplete UTF16-decoded script data to V8 where each chunk
+   * can be optionally packed as 1-byte per character if it only contains 1-byte
+   * data. The embedder should implement a subclass of this class.
+   *
+   * V8 doesn't take ownership of chunks received through this class, so the
+   * embedder is responsible for keeping the data alive until this stream is
+   * destroyed, and freeing it afterwards.
+   */
+  class V8_EXPORT FlexibleExternalSourceStream
+      : public ExternalSourceStreamBase {
+   public:
+    enum class ChunkEncoding { kOneByte, kTwoByte };
+
+    ~FlexibleExternalSourceStream() override = default;
+
+    struct Chunk {
+      Chunk(const uint8_t* data, size_t position, size_t length_in_characters,
+            ChunkEncoding encoding)
+          : data(data),
+            position(position),
+            length_in_characters(length_in_characters),
+            encoding(encoding) {}
+      Chunk() : Chunk(nullptr, 0, 0, ChunkEncoding::kOneByte) {}
+
+      size_t end_position() const { return position + length_in_characters; }
+
+      const uint8_t* data;
+      size_t position;
+      size_t length_in_characters;
+      ChunkEncoding encoding;
+    };
+
+    /**
+     * Reads the next chunk from the stream. Returns the length of the chunk in
+     * characters.
+     * `src` will point to the data
+     * `encoding` will be set to `kOneByte` if the chunk is fully 1-byte and
+     * packed as 1 byte per character, `kTwoByte` otherwise.
+     */
+    virtual Chunk GetNextChunk() = 0;
+  };
+
+  /**
    * Source code which can be streamed into V8 in pieces. It will be parsed
    * while streaming and compiled after parsing has completed. StreamedSource
    * must be kept alive while the streaming task is run (see ScriptStreamingTask
@@ -581,10 +694,12 @@ class V8_EXPORT ScriptCompiler {
    */
   class V8_EXPORT StreamedSource {
    public:
-    enum Encoding { ONE_BYTE, TWO_BYTE, UTF8, WINDOWS_1252 };
+    enum Encoding { ONE_BYTE, TWO_BYTE, UTF8, WINDOWS_1252, FLEXIBLE_UTF16 };
 
     StreamedSource(std::unique_ptr<ExternalSourceStream> source_stream,
                    Encoding encoding);
+    explicit StreamedSource(
+        std::unique_ptr<FlexibleExternalSourceStream> source_stream);
     ~StreamedSource();
 
     internal::ScriptStreamingData* impl() const { return impl_.get(); }
@@ -720,6 +835,7 @@ class V8_EXPORT ScriptCompiler {
     kNoCacheBecauseResourceWithNoCacheHandler,
     kNoCacheBecauseDeferredProduceCodeCache,
     kNoCacheBecauseStaticCodeCache,
+    kNoCacheBecauseInlineScriptCacheTooCold,
   };
 
   /**

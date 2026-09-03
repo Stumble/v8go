@@ -23,6 +23,14 @@ jobs:
       with:
         ref: ${{ inputs.sha }}
 
+    - name: Install Clang 21
+      run: |
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+        chmod +x "$RUNNER_TEMP/llvm.sh"
+        sudo "$RUNNER_TEMP/llvm.sh" 21
+        echo "CC=clang-21" >>"$GITHUB_ENV"
+        echo "CXX=clang++-21" >>"$GITHUB_ENV"
+
     - name: Install Go
       uses: actions/setup-go@v5
       with:
@@ -35,9 +43,6 @@ jobs:
         go work init . $(ls ./deps/*_*/cgo.go | xargs -r dirname)
 
     - name: Build Test
-      env:
-        CC: clang
-        CXX: clang++
       run: |
         go test -c --tags leakcheck
 

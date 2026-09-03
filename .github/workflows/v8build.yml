@@ -250,12 +250,21 @@ jobs:
         git checkout "${latest_v8_version:-$latest_v8_hash}"
         echo "latest_v8_version=${latest_v8_version:-$latest_v8_hash}" >>"$GITHUB_OUTPUT"
 
-    - name: Remove old static libraries
-      run: "find deps -maxdepth 2 -type f -name libmanifest | xargs -rn1 dirname | xargs -r rm -fr"
+    - name: Remove old generated dependencies
+      run: |
+        find deps -maxdepth 2 -type f -name libmanifest | xargs -rn1 dirname | xargs -r rm -fr
+        rm -fr deps/include deps/include_libcxx deps/include_libcxxabi
 
-    - name: Download Artifacts
+    - name: Download Architecture Independent Artifacts
       uses: actions/download-artifact@v4
       with:
+        name: include
+        path: deps
+
+    - name: Download Platform Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        pattern: "*_*"
         path: deps
 
     - name: Update LDFLAGS in cgo.go
@@ -276,6 +285,7 @@ jobs:
         add: |
           - cgo.go
           - CHANGELOG.md
+          - deps/*_*/cgo.go
           - deps/*_*/lib*.a
           - deps/*_*/libmanifest
           - deps/include/**

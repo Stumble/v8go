@@ -44,7 +44,7 @@ therefore requires LLVM Clang 21 or newer. Set `CC` and `CXX` when building or
 testing, for example:
 
 ```sh
-CC=clang-21 CXX=clang++-21 go test ./...
+CC=clang-21 CXX=clang++-21 CGO_CXXFLAGS=-nostdinc++ go test ./...
 ```
 
 ## Usage

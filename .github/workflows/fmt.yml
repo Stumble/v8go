@@ -17,10 +17,20 @@ jobs:
       with:
         fetch-depth: 1
 
+    - name: Install Clang 21
+      run: |
+        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
+        chmod +x "$RUNNER_TEMP/llvm.sh"
+        sudo "$RUNNER_TEMP/llvm.sh" 21
+        echo "CC=clang-21" >>"$GITHUB_ENV"
+        echo "CXX=clang++-21" >>"$GITHUB_ENV"
+
     - name: go fmt
       run: go fmt
 
     - name: go vet
+      env:
+        CGO_CXXFLAGS: "-nostdinc++"
       run: go vet
 
     - name: go generate (clang-format)

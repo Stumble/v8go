@@ -26,6 +26,14 @@ def get_all_libs(manifest_glob):
         ]
         yield os_arch, manifest_path, libs, custom_libs
 
+def format_ldflag(lib):
+    name = os.path.basename(lib)
+    if name.startswith("lib"):
+        name = name[3:]
+    if name.endswith(".a"):
+        name = name[:-2]
+    return "-l{}".format(name)
+
 def format_ldflags_libs(os, arch, libs, custom_libs):
     # Since libraries are split without caring about dependencies,
     # we need to make it a group.
@@ -35,9 +43,9 @@ def format_ldflags_libs(os, arch, libs, custom_libs):
     # However, XCode ld(1) does not support it, but says it "will continually search a static library": https://keith.github.io/xcode-man-pages/ld.1.html
     start_group = "-Wl,--start-group " if os != "darwin" else ""
     end_group = " -Wl,--end-group" if os != "darwin" else ""
-    framework = " -framework CoreFoundation" if os == "darwin" else ""
+    framework = " -framework CoreFoundation -framework Security" if os == "darwin" else ""
     return (start_group +
-        " ".join("-l{}".format(lib.replace(".a", "").replace("libv8", "v8")) for lib in libs + custom_libs) +
+        " ".join(format_ldflag(lib) for lib in libs + custom_libs) +
         end_group + framework)
 
 def generate_imported_mod_file(path, root_module, os, arch, min_go_version):

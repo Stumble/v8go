@@ -6,6 +6,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+## [v0.36.0] - 2026-09-04
+
 ### Added
 
 - `WithTerminateOnHeapLimit` isolate option: reaching the heap limit terminates

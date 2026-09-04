@@ -76,8 +76,11 @@ func TestHeapLimitWithoutOptionEndsTheProcess(t *testing.T) {
 	// the harness, or crashed for any unrelated reason also exits non-zero, and
 	// this test would then pass while proving nothing. V8 prints its own fatal
 	// banner before ending the process; require it.
-	if !strings.Contains(string(output), "Fatal JavaScript out of memory") ||
-		!strings.Contains(string(output), "Reached heap limit") {
+	// The reason following this banner is V8-version-specific (for example,
+	// "Reached heap limit" or "CALL_AND_RETRY_LAST"). The fatal OOM banner is
+	// the stable signal that distinguishes the expected V8 failure from an
+	// unrelated child-process error.
+	if !strings.Contains(string(output), "Fatal JavaScript out of memory") {
 		t.Fatalf("child died (%v) but not from V8's heap limit; output was:\n%s", err, output)
 	}
 	t.Logf("child died from V8's heap limit as expected: %v", err)

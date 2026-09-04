@@ -11,7 +11,9 @@ import (
 )
 
 func TestCPUProfileNode(t *testing.T) {
-	t.Parallel()
+	// CPU profiles are sampling based. Running this test alongside the rest of
+	// the package can starve the profiler long enough for short-lived call
+	// paths to be absent from the profile.
 
 	ctx := v8.NewContext(nil)
 	iso := ctx.Isolate()
@@ -68,7 +70,6 @@ func TestCPUProfileNode(t *testing.T) {
 	delayNode := findChild(t, fooNode, "delay")
 	checkNode(t, delayNode, "script.js", "delay", 12, 15)
 
-	// TODO: this is flaky? https://github.com/stumble/v8go/actions/runs/7363603520/job/20043211523
 	barNode := findChild(t, fooNode, "bar")
 	checkNode(t, barNode, "script.js", "bar", 13, 13)
 

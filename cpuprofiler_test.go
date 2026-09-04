@@ -88,21 +88,21 @@ const profileScript = `function loop(timeout) {
     }
   }
 }
-function delay() { try { loop(10); } catch(e) { } }
-function bar() { delay(); }
-function baz() { delay(); }
-function foo() {
+function delay(timeout = 10) { try { loop(timeout); } catch(e) { } }
+function bar(timeout) { delay(timeout); }
+function baz(timeout) { delay(timeout); }
+function foo(delayTimeout = 10) {
     try {
-       delay();
-       bar();
-       delay();
-       baz();
+       delay(delayTimeout);
+       bar(delayTimeout);
+       delay(delayTimeout);
+       baz(delayTimeout);
     } catch (e) { }
 }
-function start(timeout) {
+function start(timeout, delayTimeout = 10) {
   var start = Date.now();
   do {
-    foo();
+    foo(delayTimeout);
     var duration = Date.now() - start;
   } while (duration < timeout);
   return duration;

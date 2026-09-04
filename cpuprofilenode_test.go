@@ -12,8 +12,8 @@ import (
 
 func TestCPUProfileNode(t *testing.T) {
 	// CPU profiles are sampling based. Running this test alongside the rest of
-	// the package can starve the profiler long enough for short-lived call
-	// paths to be absent from the profile.
+	// the package can starve the profiler, so keep it serial and give every
+	// expected call path one continuous sampling window.
 
 	ctx := v8.NewContext(nil)
 	iso := ctx.Isolate()
@@ -32,9 +32,11 @@ func TestCPUProfileNode(t *testing.T) {
 	fatalIf(t, err)
 	fn, err := val.AsFunction()
 	fatalIf(t, err)
-	timeout, err := v8.NewValue(iso, int32(1000))
+	timeout, err := v8.NewValue(iso, int32(0))
 	fatalIf(t, err)
-	_, err = fn.Call(ctx.Global(), timeout)
+	pathDuration, err := v8.NewValue(iso, int32(250))
+	fatalIf(t, err)
+	_, err = fn.Call(ctx.Global(), timeout, pathDuration)
 	fatalIf(t, err)
 
 	cpuProfile := cpuProfiler.StopProfiling(title)

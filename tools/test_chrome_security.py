@@ -2,6 +2,7 @@ import unittest
 
 from chrome_security import (
     FeedError,
+    MAX_ENTRY_CONTENT,
     map_chrome_versions_to_v8,
     parse_security_feed,
     render_issue,
@@ -106,12 +107,19 @@ class ChromeSecurityFeedTest(unittest.TestCase):
                 with self.assertRaises(FeedError):
                     parse_security_feed(payload)
 
+    def test_oversized_entry_fails_closed(self):
+        with self.assertRaisesRegex(FeedError, "content is too large"):
+            parse_security_feed(
+                feed(entry("x" * (MAX_ENTRY_CONTENT + 1)))
+            )
+
     def test_rendered_issue_treats_article_text_as_data(self):
         payload = feed(
             entry(
                 """
                 <p>Chrome 152.0.7977.82 security fixes.</p>
-                <p>High CVE-2026-85046: $(touch /tmp/not-executed) in V8.
+                <p>High CVE-2026-85046: $(touch /tmp/not-executed)
+                [untrusted](javascript:alert(1)) | @Stumble in V8.
                 Reported by Researcher.</p>
                 """
             )
@@ -122,8 +130,13 @@ class ChromeSecurityFeedTest(unittest.TestCase):
 
         self.assertIn("$(touch /tmp/not-executed)", rendered.body)
         self.assertIn(f"<!-- chrome-release-id:{ENTRY_ID} -->", rendered.body)
-        self.assertIn("v8-confirmed-signal", rendered.labels)
+        self.assertIn("v8-mentioned-upstream", rendered.labels)
         self.assertNotIn("`$(touch", rendered.body)
+        self.assertIn(
+            r"\[untrusted\](javascript:alert(1)) \| &#64;Stumble in V8",
+            rendered.body,
+        )
+        self.assertNotIn("@Stumble in V8", rendered.body)
 
     def test_maps_only_valid_matching_stable_linux_versions(self):
         releases = [

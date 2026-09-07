@@ -40,6 +40,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: v8-release
+  cancel-in-progress: false
+
 jobs:
   test:
     name: Test exact release commit
@@ -91,6 +95,14 @@ jobs:
 
           git fetch origin master --tags
           remote_master="$(git rev-parse refs/remotes/origin/master)"
+          existing_tag="$(git ls-remote --tags origin "refs/tags/$RELEASE_VERSION" | awk 'NR == 1 { print $1 }')"
+          resolved_tag=""
+          if [[ -n "$existing_tag" ]]; then
+            git fetch origin "refs/tags/$RELEASE_VERSION:refs/tags/$RELEASE_VERSION"
+            resolved_tag="$(git rev-list -n1 "$RELEASE_VERSION")"
+            test "$resolved_tag" = "$TESTED_SHA"
+          fi
+
           if [[ -n "$EXPECTED_BASE_SHA" ]]; then
             [[ "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
             git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$TESTED_SHA"
@@ -102,16 +114,10 @@ jobs:
               exit 1
             fi
           elif [[ "$remote_master" != "$TESTED_SHA" ]]; then
-            echo "manual releases must target the current master commit" >&2
-            exit 1
-          fi
-          test "$remote_master" = "$TESTED_SHA"
-
-          existing_tag="$(git ls-remote --tags origin "refs/tags/$RELEASE_VERSION" | awk 'NR == 1 { print $1 }')"
-          if [[ -n "$existing_tag" ]]; then
-            git fetch origin "refs/tags/$RELEASE_VERSION:refs/tags/$RELEASE_VERSION"
-            resolved_tag="$(git rev-list -n1 "$RELEASE_VERSION")"
-            test "$resolved_tag" = "$TESTED_SHA"
+            if [[ "$resolved_tag" != "$TESTED_SHA" ]] || ! git merge-base --is-ancestor "$TESTED_SHA" "$remote_master"; then
+              echo "manual release target is neither current master nor an existing ancestor tag" >&2
+              exit 1
+            fi
           fi
 
           if gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then

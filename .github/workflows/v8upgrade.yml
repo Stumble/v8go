@@ -30,6 +30,7 @@ jobs:
       chrome_version: ${{ steps.upstream.outputs.chrome_version }}
       quarantine_reason: ${{ steps.upstream.outputs.quarantine_reason }}
       recovery: ${{ steps.decision.outputs.recovery }}
+      recovery_sha: ${{ steps.decision.outputs.recovery_sha }}
       recovery_version: ${{ steps.decision.outputs.recovery_version }}
       should_build: ${{ steps.decision.outputs.should_build }}
       should_publish: ${{ steps.decision.outputs.should_publish }}
@@ -88,7 +89,7 @@ jobs:
                 --repo "$GITHUB_REPOSITORY" \
                 --state all \
                 --label v8-upgrade \
-                --limit 100 \
+                --limit 1000 \
                 --json body)"
               if ! jq -e --arg marker "$marker" \
                 '.[] | select((.body // "") | contains($marker)) | select((.body // "") | contains("<!-- v8-upgrade-state:candidate-passed -->"))' \
@@ -99,22 +100,30 @@ jobs:
           fi
 
           recovery=false
+          recovery_sha=""
           recovery_version=""
           if [[ "$UPSTREAM_STATE" == current && "$should_publish" == true ]]; then
             recovery_version="$(sed -nE 's/^## \[(v[0-9]+\.[0-9]+\.[0-9]+)\].*/\1/p' CHANGELOG.md | head -n1)"
             [[ "$recovery_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-            tag_sha="$(git ls-remote --tags origin "refs/tags/$recovery_version" | awk 'NR == 1 { print $1 }')"
-            if [[ -n "$tag_sha" && "$tag_sha" != "$base_sha" ]]; then
-              echo "$recovery_version points at $tag_sha instead of current master $base_sha" >&2
-              exit 1
+            tag_refs="$(git ls-remote --tags origin \
+              "refs/tags/$recovery_version" \
+              "refs/tags/$recovery_version^{}")"
+            tag_sha="$(awk '/\^\{\}$/ { print $1; found = 1 } !found && NR == 1 { first = $1 } END { if (!found) print first }' <<<"$tag_refs")"
+            if [[ -n "$tag_sha" ]]; then
+              git merge-base --is-ancestor "$tag_sha" "$base_sha"
             fi
-            if [[ -z "$tag_sha" ]] || ! gh release view "$recovery_version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            if [[ -z "$tag_sha" ]]; then
               recovery=true
+              recovery_sha="$base_sha"
+            elif ! gh release view "$recovery_version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              recovery=true
+              recovery_sha="$tag_sha"
             fi
           fi
 
           echo "base_sha=$base_sha" >>"$GITHUB_OUTPUT"
           echo "recovery=$recovery" >>"$GITHUB_OUTPUT"
+          echo "recovery_sha=$recovery_sha" >>"$GITHUB_OUTPUT"
           echo "recovery_version=$recovery_version" >>"$GITHUB_OUTPUT"
           echo "should_build=$should_build" >>"$GITHUB_OUTPUT"
           echo "should_publish=$should_publish" >>"$GITHUB_OUTPUT"
@@ -150,7 +159,7 @@ jobs:
       contents: write
     uses: ./.github/workflows/release.yml
     with:
-      sha: ${{ needs.build.outputs.sha || needs.discover.outputs.base_sha }}
+      sha: ${{ needs.build.outputs.sha || needs.discover.outputs.recovery_sha }}
       base_sha: ${{ needs.build.outputs.base_sha }}
       branch: ${{ needs.build.outputs.branch }}
       version: ${{ needs.build.outputs.version || needs.discover.outputs.recovery_version }}
@@ -180,7 +189,7 @@ jobs:
             --color 1d76db \
             --description 'Automated Stable V8 upgrade state' \
             --force
-          gh label create blocked \
+          gh label create v8-upgrade-blocked \
             --repo "$GITHUB_REPOSITORY" \
             --color b60205 \
             --description 'Automation requires maintainer action' \
@@ -218,11 +227,21 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --state all \
             --label v8-upgrade \
-            --limit 100 \
+            --limit 1000 \
             --json number,body,state,labels)"
           number="$(jq -r --arg marker "$marker" \
             '[.[] | select((.body // "") | contains($marker))][0].number // empty' \
             <<<"$issues")"
+
+          if [[ "$DISCOVERY_RESULT" == success ]]; then
+            jq -r --arg marker "$marker" \
+              '.[] | select(.state == "OPEN") | select((.body // "") | contains("<!-- v8-upgrade-state:candidate-passed -->")) | select(((.body // "") | contains($marker)) | not) | .number' \
+              <<<"$issues" \
+              | while read -r superseded; do
+                  gh issue close "$superseded" --repo "$GITHUB_REPOSITORY" \
+                    --comment "Superseded by the newer Stable V8 state."
+                done
+          fi
 
           if [[ "$state" == released || "$state" == current ]]; then
             if [[ -n "$number" ]] && jq -e --argjson number "$number" \
@@ -230,13 +249,6 @@ jobs:
               gh issue close "$number" --repo "$GITHUB_REPOSITORY" \
                 --comment "$detail Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
             fi
-            jq -r --arg marker "$marker" \
-              '.[] | select(.state == "OPEN") | select((.body // "") | contains("<!-- v8-upgrade-state:candidate-passed -->")) | select(((.body // "") | contains($marker)) | not) | .number' \
-              <<<"$issues" \
-              | while read -r superseded; do
-                  gh issue close "$superseded" --repo "$GITHUB_REPOSITORY" \
-                    --comment "Superseded by the current Stable V8 state."
-                done
             exit 0
           fi
 
@@ -256,15 +268,15 @@ jobs:
 
           labels=(--add-label v8-upgrade)
           if [[ "$state" == blocked ]]; then
-            labels+=(--add-label blocked)
+            labels+=(--add-label v8-upgrade-blocked)
           fi
           if [[ -n "$number" ]]; then
             gh issue edit "$number" --repo "$GITHUB_REPOSITORY" \
-              --title "$title" --body-file "$body" "${labels[@]}"
+              --title "$title" --body-file "$body" --add-assignee Stumble "${labels[@]}"
             if [[ "$state" != blocked ]] && jq -e --argjson number "$number" \
-              '.[] | select(.number == $number) | .labels[]? | select(.name == "blocked")' \
+              '.[] | select(.number == $number) | .labels[]? | select(.name == "v8-upgrade-blocked")' \
               <<<"$issues" >/dev/null; then
-              gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --remove-label blocked
+              gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --remove-label v8-upgrade-blocked
             fi
             if jq -e --argjson number "$number" \
               '.[] | select(.number == $number and .state == "CLOSED")' <<<"$issues" >/dev/null; then
@@ -273,8 +285,8 @@ jobs:
           else
             create_labels=(--label v8-upgrade)
             if [[ "$state" == blocked ]]; then
-              create_labels+=(--label blocked)
+              create_labels+=(--label v8-upgrade-blocked)
             fi
             gh issue create --repo "$GITHUB_REPOSITORY" \
-              --title "$title" --body-file "$body" "${create_labels[@]}"
+              --title "$title" --body-file "$body" --assignee Stumble "${create_labels[@]}"
           fi

@@ -27,6 +27,8 @@ V8_REPOSITORY = "https://chromium.googlesource.com/v8/v8.git"
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 CHROME_VERSION_RE = re.compile(r"^\d+\.\d+\.\d+\.\d+$")
 V8_BRANCH_RE = re.compile(r"^\d+\.\d+$")
+MAX_JSON_BYTES = 1024 * 1024
+MAX_REMOTE_LINES = 5000
 
 
 class DiscoveryError(ValueError):
@@ -83,7 +85,10 @@ def parse_v8_branch(payload: Any, milestone: int) -> str:
 
 def _parse_remote_lines(output: str, context: str) -> list[tuple[str, str]]:
     refs = []
-    for line in output.splitlines():
+    lines = output.splitlines()
+    if len(lines) > MAX_REMOTE_LINES:
+        raise DiscoveryError(f"too many {context} lines")
+    for line in lines:
         fields = line.split()
         if len(fields) != 2 or not SHA_RE.fullmatch(fields[0]):
             raise DiscoveryError(f"invalid {context} line")
@@ -184,8 +189,11 @@ def _fetch_json(url: str, *, attempts: int = 3, timeout: int = 20) -> Any:
             with urllib.request.urlopen(request, timeout=timeout) as response:
                 if response.url != url:
                     raise DiscoveryError(f"unexpected redirect for {url}")
-                return json.load(response)
-        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+                raw = response.read(MAX_JSON_BYTES + 1)
+                if len(raw) > MAX_JSON_BYTES:
+                    raise DiscoveryError(f"JSON response from {url} is too large")
+                return json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, urllib.error.URLError, json.JSONDecodeError) as exc:
             last_error = exc
             if attempt + 1 < attempts:
                 time.sleep(1 << attempt)
@@ -207,6 +215,8 @@ def _ls_remote(*patterns: str) -> str:
         )
     except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
         raise DiscoveryError(f"failed to read V8 refs: {exc}") from exc
+    if len(completed.stdout) > MAX_JSON_BYTES:
+        raise DiscoveryError("V8 ref output is too large")
     return completed.stdout
 
 

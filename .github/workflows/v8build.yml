@@ -55,6 +55,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: v8-build-${{ inputs.v8_hash || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   build_common:
     name: Build architecture-independent files
@@ -262,8 +266,13 @@ jobs:
         run: |
           set -euo pipefail
           cd "deps/$PLATFORM"
-          sha256sum lib*.a libmanifest >SHA256SUMS
-          sha256sum --check SHA256SUMS
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum lib*.a libmanifest >SHA256SUMS
+            sha256sum --check SHA256SUMS
+          else
+            shasum --algorithm 256 lib*.a libmanifest >SHA256SUMS
+            shasum --algorithm 256 --check SHA256SUMS
+          fi
 
       - name: Save exact V8 build cache
         if: always() && steps.restore-v8-build.outputs.cache-hit != 'true'

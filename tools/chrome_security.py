@@ -39,13 +39,17 @@ CVE_START_RE = re.compile(
     re.IGNORECASE,
 )
 EXPLOITED_RE = re.compile(
-    r"exploit\s+for\s+(CVE-\d{4}-\d+)\s+exists\s+in\s+the\s+wild",
+    r"exploits?\s+for\s+(CVE-\d{4}-\d+)\s+exists?\s+in\s+the\s+wild",
     re.IGNORECASE,
 )
 ENGINE_RE = re.compile(r"(?:\bV8\b|\bWebAssembly\b|\bWasm\b)", re.IGNORECASE)
 SHA_RE = re.compile(r"^[0-9a-f]{40}$")
 REPOSITORY_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
 LOGIN_RE = re.compile(r"^[A-Za-z0-9-]+$")
+MAX_JSON_BYTES = 5 * 1024 * 1024
+MAX_FEED_ENTRIES = 100
+MAX_ENTRY_CONTENT = 1024 * 1024
+MAX_RENDERED_CVES = 50
 
 
 class FeedError(ValueError):
@@ -85,18 +89,30 @@ class _TextExtractor(html.parser.HTMLParser):
     def __init__(self) -> None:
         super().__init__(convert_charrefs=True)
         self.parts: list[str] = []
+        self.ignored_depth = 0
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         del attrs
+        if tag in {"script", "style"}:
+            self.ignored_depth += 1
+            return
+        if self.ignored_depth:
+            return
         if tag in {"br", "div", "h1", "h2", "h3", "h4", "li", "p", "tr"}:
             self.parts.append("\n")
 
     def handle_endtag(self, tag: str) -> None:
+        if tag in {"script", "style"}:
+            self.ignored_depth = max(0, self.ignored_depth - 1)
+            return
+        if self.ignored_depth:
+            return
         if tag in {"div", "h1", "h2", "h3", "h4", "li", "p", "tr"}:
             self.parts.append("\n")
 
     def handle_data(self, data: str) -> None:
-        self.parts.append(data)
+        if not self.ignored_depth:
+            self.parts.append(data)
 
     def text(self) -> str:
         return " ".join("".join(self.parts).split())
@@ -108,11 +124,13 @@ def _mapping(value: Any, context: str) -> dict[str, Any]:
     return value
 
 
-def _field_text(record: dict[str, Any], field: str) -> str:
+def _field_text(record: dict[str, Any], field: str, *, max_length: int = 500) -> str:
     wrapper = _mapping(record.get(field), field)
     value = wrapper.get("$t")
     if not isinstance(value, str) or not value.strip():
         raise FeedError(f"{field} must contain text")
+    if len(value) > max_length:
+        raise FeedError(f"{field} is too large")
     return value.strip()
 
 
@@ -151,11 +169,8 @@ def _source_url(record: dict[str, Any]) -> str:
 
 def _plain_text(markup: str) -> str:
     parser = _TextExtractor()
-    try:
-        parser.feed(markup)
-        parser.close()
-    except html.parser.HTMLParseError as exc:
-        raise FeedError("entry HTML is malformed") from exc
+    parser.feed(markup)
+    parser.close()
     return parser.text()
 
 
@@ -191,6 +206,8 @@ def parse_security_feed(payload: Any) -> list[ChromeSecurityNotice]:
     entries = feed.get("entry", [])
     if not isinstance(entries, list):
         raise FeedError("feed entries must be a list")
+    if len(entries) > MAX_FEED_ENTRIES:
+        raise FeedError("feed contains too many entries")
 
     notices = []
     seen_entry_ids = set()
@@ -210,9 +227,11 @@ def parse_security_feed(payload: Any) -> list[ChromeSecurityNotice]:
         updated_at = _validated_time(_field_text(record, "updated"), "updated")
         published_at = _validated_time(_field_text(record, "published"), "published")
         source_url = _source_url(record)
-        markup = _field_text(record, "content")
+        markup = _field_text(record, "content", max_length=MAX_ENTRY_CONTENT)
         text = _plain_text(markup)
         cves = _parse_cves(text)
+        if len(cves) > 1000:
+            raise FeedError("entry contains too many CVEs")
         has_security_heading = "security fixes" in text.casefold()
         if not cves and not has_security_heading:
             continue
@@ -270,7 +289,18 @@ def map_chrome_versions_to_v8(
 
 
 def _table_text(value: str) -> str:
-    return " ".join(value.replace("|", "\\|").split())[:500]
+    escaped = (
+        value.replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace("@", "&#64;")
+        .replace("\\", "\\\\")
+        .replace("|", "\\|")
+        .replace("`", "\\`")
+        .replace("[", "\\[")
+        .replace("]", "\\]")
+    )
+    return " ".join(escaped.split())[:500]
 
 
 def render_issue(
@@ -280,7 +310,7 @@ def render_issue(
     if notice.review_required:
         labels.append("v8-review-required")
     if notice.explicitly_engine_related:
-        labels.append("v8-confirmed-signal")
+        labels.append("v8-mentioned-upstream")
     if notice.exploited_cves:
         labels.append("exploited-in-wild")
 
@@ -321,8 +351,12 @@ def render_issue(
     if relevant_cves:
         lines.extend(
             f"| {cve.severity} | {cve.identifier} | {_table_text(cve.description)} |"
-            for cve in relevant_cves
+            for cve in relevant_cves[:MAX_RENDERED_CVES]
         )
+        if len(relevant_cves) > MAX_RENDERED_CVES:
+            lines.append(
+                f"| Unknown | Truncated | {len(relevant_cves) - MAX_RENDERED_CVES} more signals; review the official post |"
+            )
     else:
         lines.append("| Unknown | None explicit | Review the official post; component details may remain restricted |")
     lines.extend(["", "### Chrome-to-V8 mapping", ""])
@@ -370,8 +404,17 @@ def _fetch_json(url: str, *, attempts: int = 3, timeout: int = 20) -> Any:
     for attempt in range(attempts):
         try:
             with urllib.request.urlopen(request, timeout=timeout) as response:
-                return json.load(response)
-        except (OSError, urllib.error.URLError, json.JSONDecodeError) as exc:
+                final_url = urllib.parse.urlparse(response.url)
+                if final_url.scheme != "https" or final_url.hostname not in {
+                    ALLOWED_SOURCE_HOST,
+                    "chromiumdash.appspot.com",
+                }:
+                    raise FeedError("official JSON endpoint redirected to an unsafe origin")
+                raw = response.read(MAX_JSON_BYTES + 1)
+                if len(raw) > MAX_JSON_BYTES:
+                    raise FeedError("official JSON response is too large")
+                return json.loads(raw.decode("utf-8"))
+        except (OSError, UnicodeDecodeError, urllib.error.URLError, json.JSONDecodeError) as exc:
             last_error = exc
             if attempt + 1 < attempts:
                 time.sleep(1 << attempt)
@@ -419,7 +462,10 @@ def _existing_security_issues(repository: str) -> dict[str, dict[str, Any]]:
         body = issue.get("body") or ""
         match = re.search(r"<!-- chrome-release-id:([^>]+) -->", body)
         if match:
-            result[match.group(1)] = issue
+            entry_id = match.group(1)
+            if entry_id in result:
+                raise FeedError(f"multiple GitHub issues track {entry_id}")
+            result[entry_id] = issue
     return result
 
 
@@ -427,7 +473,7 @@ def _ensure_labels(repository: str) -> None:
     definitions = {
         "upstream-security": ("b60205", "Official upstream security announcement"),
         "v8-review-required": ("d93f0b", "Standalone V8 impact requires maintainer review"),
-        "v8-confirmed-signal": ("d1242f", "Announcement explicitly names V8 or WebAssembly"),
+        "v8-mentioned-upstream": ("d1242f", "Announcement explicitly names V8 or WebAssembly"),
         "exploited-in-wild": ("8b0000", "Official source reports exploitation in the wild"),
     }
     for name, (color, description) in definitions.items():

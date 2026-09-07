@@ -14,6 +14,7 @@ commit. It runs every four hours.
 - An untagged tip is built and tested as a candidate but is not released.
 - A tagged tip is built for Darwin/Linux on AMD64/ARM64, checksummed, staged,
   tested, and leak-checked before the exact commit can advance `master`.
+- `depot_tools` self-update is disabled; builds use the reviewed submodule pin.
 - A changed `master`, invalid upstream metadata, checksum failure, test failure,
   or conflicting tag prevents publication and leaves a tracking issue.
 - Published releases and tags are never rewritten. Recovery uses a newer release

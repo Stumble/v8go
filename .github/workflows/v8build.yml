@@ -55,6 +55,9 @@ on:
 permissions:
   contents: read
 
+env:
+  DEPOT_TOOLS_UPDATE: '0'
+
 concurrency:
   group: v8-build-${{ inputs.v8_hash || github.ref }}
   cancel-in-progress: false
@@ -68,6 +71,7 @@ jobs:
     outputs:
       v8_hash: ${{ steps.target.outputs.v8_hash }}
       base_sha: ${{ steps.target.outputs.base_sha }}
+      build_key: ${{ steps.target.outputs.build_key }}
     steps:
       - name: Checkout trusted build definition
         uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -88,8 +92,17 @@ jobs:
             echo "invalid V8 hash" >&2
             exit 1
           }
+          build_key="$({
+            git rev-parse HEAD:deps/depot_tools
+            find deps -maxdepth 1 -type f \
+              \( -name 'build*.py' -o -name update_cgo.py -o -name build-requirements.txt \) \
+              -print0 | sort -z | xargs -0 sha256sum
+            find patches -maxdepth 1 -type f -name '*.patch' -print0 \
+              | sort -z | xargs -0 sha256sum
+          } | sha256sum | awk '{ print $1 }')"
           echo "v8_hash=$v8_hash" >>"$GITHUB_OUTPUT"
           echo "base_sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
+          echo "build_key=$build_key" >>"$GITHUB_OUTPUT"
 
       - name: Checkout exact V8 source
         env:
@@ -236,14 +249,14 @@ jobs:
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/ccache
-          key: libv8:ccache:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py', 'deps/build-requirements.txt') }}
+          key: libv8:ccache:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
 
       - name: Restore exact V8 build cache
         id: restore-v8-build
         uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: deps/.build/${{ matrix.target.os }}_${{ matrix.target.arch }}
-          key: libv8:v8build:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py', 'deps/build-requirements.txt') }}
+          key: libv8:v8build:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
 
       - name: Update depot_tools fetch config
         run: |
@@ -275,18 +288,18 @@ jobs:
           fi
 
       - name: Save exact V8 build cache
-        if: always() && steps.restore-v8-build.outputs.cache-hit != 'true'
+        if: steps.restore-v8-build.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: deps/.build/${{ matrix.target.os }}_${{ matrix.target.arch }}
-          key: libv8:v8build:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py', 'deps/build-requirements.txt') }}
+          key: libv8:v8build:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
 
       - name: Save exact CCache
-        if: always() && steps.restore-ccache.outputs.cache-hit != 'true'
+        if: steps.restore-ccache.outputs.cache-hit != 'true'
         uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
         with:
           path: ${{ runner.temp }}/ccache
-          key: libv8:ccache:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py', 'deps/build-requirements.txt') }}
+          key: libv8:ccache:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
 
       - name: Show CCache status
         run: ccache -s

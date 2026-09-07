@@ -85,6 +85,7 @@ jobs:
               should_build=true
             else
               marker="<!-- v8-upgrade-hash:$V8_HASH -->"
+              base_marker="<!-- v8-upgrade-base:$base_sha -->"
               issues="$(gh issue list \
                 --repo "$GITHUB_REPOSITORY" \
                 --state all \
@@ -92,7 +93,8 @@ jobs:
                 --limit 1000 \
                 --json body)"
               if ! jq -e --arg marker "$marker" \
-                '.[] | select((.body // "") | contains($marker)) | select((.body // "") | contains("<!-- v8-upgrade-state:candidate-passed -->"))' \
+                --arg base_marker "$base_marker" \
+                '.[] | select((.body // "") | contains($marker)) | select((.body // "") | contains($base_marker)) | select((.body // "") | contains("<!-- v8-upgrade-state:candidate-passed -->"))' \
                 <<<"$issues" >/dev/null; then
                 should_build=true
               fi
@@ -175,6 +177,7 @@ jobs:
       - name: Report durable upgrade state
         env:
           BUILD_RESULT: ${{ needs.build.result }}
+          BASE_SHA: ${{ needs.discover.outputs.base_sha }}
           DISCOVERY_RESULT: ${{ needs.discover.result }}
           GH_TOKEN: ${{ github.token }}
           QUARANTINE_REASON: ${{ needs.discover.outputs.quarantine_reason }}
@@ -255,6 +258,7 @@ jobs:
           body="$RUNNER_TEMP/v8-upgrade.md"
           {
             echo "$marker"
+            echo "<!-- v8-upgrade-base:${BASE_SHA:-unknown} -->"
             echo "<!-- v8-upgrade-state:$state -->"
             echo
             echo "$detail"

@@ -297,8 +297,9 @@ jobs:
           name: ${{ matrix.target.os }}_${{ matrix.target.arch }}-${{ needs.build_common.outputs.v8_hash }}
           if-no-files-found: error
           path: |
-            deps/${{ matrix.target.os }}_${{ matrix.target.arch }}/
-            !deps/${{ matrix.target.os }}_${{ matrix.target.arch }}/vendor.go
+            deps/${{ matrix.target.os }}_${{ matrix.target.arch }}/lib*.a
+            deps/${{ matrix.target.os }}_${{ matrix.target.arch }}/libmanifest
+            deps/${{ matrix.target.os }}_${{ matrix.target.arch }}/SHA256SUMS
           retention-days: 2
 
   assemble:
@@ -381,8 +382,10 @@ jobs:
           name: candidate-${{ needs.build_common.outputs.v8_hash }}
           if-no-files-found: error
           path: |
-            cgo.go
+            cgo*.go
             CHANGELOG.md
+            deps/*_*/cgo.go
+            deps/*_*/go.mod
             deps/v8_hash
             deps/include/
             deps/include_libcxx/
@@ -503,10 +506,11 @@ jobs:
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
           git add \
-            cgo.go \
+            cgo*.go \
             CHANGELOG.md \
             deps/*_*/SHA256SUMS \
             deps/*_*/cgo.go \
+            deps/*_*/go.mod \
             deps/*_*/lib*.a \
             deps/*_*/libmanifest \
             deps/include \

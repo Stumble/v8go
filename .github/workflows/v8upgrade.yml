@@ -1,107 +1,280 @@
 name: V8 Upgrade
 
 on:
-  workflow_dispatch:
   schedule:
-  - cron: '0 0 * * 1' # Run every Monday
+    - cron: '37 */4 * * *'
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Stage and publish a tagged update when running on master
+        default: false
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
 
 concurrency:
   group: v8-upgrade
   cancel-in-progress: false
 
 jobs:
-  upgrade:
-    name: Upgrade V8
+  discover:
+    name: Discover current Stable V8 branch tip
     runs-on: ubuntu-22.04
     permissions:
       contents: read
+      issues: read
     outputs:
-      has_upgrade: ${{ steps.check_v8.outputs.has_upgrade }}
-      latest_v8_hash: ${{ steps.check_v8.outputs.latest_v8_hash }}
+      base_sha: ${{ steps.decision.outputs.base_sha }}
+      chrome_version: ${{ steps.upstream.outputs.chrome_version }}
+      quarantine_reason: ${{ steps.upstream.outputs.quarantine_reason }}
+      recovery: ${{ steps.decision.outputs.recovery }}
+      recovery_version: ${{ steps.decision.outputs.recovery_version }}
+      should_build: ${{ steps.decision.outputs.should_build }}
+      should_publish: ${{ steps.decision.outputs.should_publish }}
+      state: ${{ steps.upstream.outputs.state }}
+      v8_branch: ${{ steps.upstream.outputs.v8_branch }}
+      v8_hash: ${{ steps.upstream.outputs.v8_hash }}
+      v8_version: ${{ steps.upstream.outputs.v8_version }}
     steps:
-    - name: Install Utilities
-      run: |
-        sudo apt-get update
-        sudo apt-get install -qy --no-install-recommends jq
+      - name: Checkout trusted discovery code
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
+      - name: Test discovery parser
+        run: python3 -m unittest discover -s tools -p 'test_v8_update.py'
 
-    - id: check_v8
-      name: Check Latest Stable Chromium V8
-      env:
-        V8_RELEASES_URL: https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=Linux&num=1&offset=0
-      run: |
-        set -euo pipefail
+      - id: upstream
+        name: Resolve Stable branch head and tag
+        run: python3 tools/v8_update.py --github-output "$GITHUB_OUTPUT"
 
-        # Fail closed if Chromium changes the response shape or the request
-        # returns an error. Never feed an empty, null, or malformed hash into
-        # the V8 build workflow.
-        latest_v8_hash="$(curl --fail --retry 3 --retry-all-errors --silent --show-error "$V8_RELEASES_URL" | \
-          jq -er '.[0].hashes.v8 | select(type == "string" and test("^[0-9a-f]{40}$"))')"
-        current_v8_hash="$(tr -d '[:space:]' < deps/v8_hash)"
-        bad_reason="$(awk -v hash="$latest_v8_hash" \
-          'NF && $1 == hash { sub(/^[^[:space:]]+[[:space:]]*/, ""); print; exit }' \
-          deps/bad_v8_hashes)"
+      - id: decision
+        name: Decide build and publication path
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_PUBLISH: ${{ inputs.publish }}
+          UPSTREAM_STATE: ${{ steps.upstream.outputs.state }}
+          V8_HASH: ${{ steps.upstream.outputs.v8_hash }}
+        run: |
+          set -euo pipefail
+          base_sha="$(git rev-parse HEAD)"
+          is_default=false
+          if [[ "$GITHUB_REF" == refs/heads/master ]]; then
+            is_default=true
+          fi
+          should_publish=false
+          if [[ "$is_default" == true && ( "$GITHUB_EVENT_NAME" == schedule || "$REQUESTED_PUBLISH" == true ) ]]; then
+            should_publish=true
+          fi
+          if [[ "$should_publish" == true ]]; then
+            issues_enabled="$(gh api "repos/$GITHUB_REPOSITORY" --jq .has_issues)"
+            if [[ "$issues_enabled" != true ]]; then
+              echo "GitHub Issues must be enabled before automatic V8 publication" >&2
+              exit 1
+            fi
+          fi
 
-        printf 'latest_v8_hash=%s\n' "$latest_v8_hash" >>"$GITHUB_OUTPUT"
-        printf 'current_v8_hash=%s\n' "$current_v8_hash" >>"$GITHUB_OUTPUT"
-        if [[ -n "$bad_reason" ]]; then
-          printf 'has_upgrade=false\n' >>"$GITHUB_OUTPUT"
-          printf 'reason=%s\n' "$bad_reason" >>"$GITHUB_OUTPUT"
-        elif [[ "$current_v8_hash" == "$latest_v8_hash" ]]; then
-          printf 'has_upgrade=false\n' >>"$GITHUB_OUTPUT"
-        else
-          printf 'has_upgrade=true\n' >>"$GITHUB_OUTPUT"
-        fi
+          should_build=false
+          if [[ "$UPSTREAM_STATE" == release ]]; then
+            should_build=true
+          elif [[ "$UPSTREAM_STATE" == candidate ]]; then
+            if [[ "$is_default" != true ]]; then
+              should_build=true
+            else
+              marker="<!-- v8-upgrade-hash:$V8_HASH -->"
+              issues="$(gh issue list \
+                --repo "$GITHUB_REPOSITORY" \
+                --state all \
+                --label v8-upgrade \
+                --limit 100 \
+                --json body)"
+              if ! jq -e --arg marker "$marker" \
+                '.[] | select((.body // "") | contains($marker)) | select((.body // "") | contains("<!-- v8-upgrade-state:candidate-passed -->"))' \
+                <<<"$issues" >/dev/null; then
+                should_build=true
+              fi
+            fi
+          fi
 
-    - name: Create Summary
-      if: ${{ steps.check_v8.outputs.has_upgrade == 'true' }}
-      env:
-        CURRENT_V8_HASH: ${{ steps.check_v8.outputs.current_v8_hash }}
-        LATEST_V8_HASH: ${{ steps.check_v8.outputs.latest_v8_hash }}
-      run: |
-        {
-          echo "Current V8 hash: $CURRENT_V8_HASH"
-          echo "New V8 hash: $LATEST_V8_HASH"
-        } >>"$GITHUB_STEP_SUMMARY"
+          recovery=false
+          recovery_version=""
+          if [[ "$UPSTREAM_STATE" == current && "$should_publish" == true ]]; then
+            recovery_version="$(sed -nE 's/^## \[(v[0-9]+\.[0-9]+\.[0-9]+)\].*/\1/p' CHANGELOG.md | head -n1)"
+            [[ "$recovery_version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+            tag_sha="$(git ls-remote --tags origin "refs/tags/$recovery_version" | awk 'NR == 1 { print $1 }')"
+            if [[ -n "$tag_sha" && "$tag_sha" != "$base_sha" ]]; then
+              echo "$recovery_version points at $tag_sha instead of current master $base_sha" >&2
+              exit 1
+            fi
+            if [[ -z "$tag_sha" ]] || ! gh release view "$recovery_version" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              recovery=true
+            fi
+          fi
 
-    - name: Create Summary (no upgrade)
-      if: ${{ steps.check_v8.outputs.has_upgrade != 'true' }}
-      env:
-        CURRENT_V8_HASH: ${{ steps.check_v8.outputs.current_v8_hash }}
-        LATEST_V8_HASH: ${{ steps.check_v8.outputs.latest_v8_hash }}
-        REASON: ${{ steps.check_v8.outputs.reason }}
-      run: |
-        {
-          echo "Current V8 hash: $CURRENT_V8_HASH"
-          echo "Latest V8 hash: $LATEST_V8_HASH"
-          echo "No V8 upgrade available."
-        } >>"$GITHUB_STEP_SUMMARY"
-        if [[ -n "$REASON" ]]; then
-          echo "Reason: $REASON" >>"$GITHUB_STEP_SUMMARY"
-        fi
+          echo "base_sha=$base_sha" >>"$GITHUB_OUTPUT"
+          echo "recovery=$recovery" >>"$GITHUB_OUTPUT"
+          echo "recovery_version=$recovery_version" >>"$GITHUB_OUTPUT"
+          echo "should_build=$should_build" >>"$GITHUB_OUTPUT"
+          echo "should_publish=$should_publish" >>"$GITHUB_OUTPUT"
+          {
+            echo "Chrome Stable: ${{ steps.upstream.outputs.chrome_version }}"
+            echo "V8 branch: ${{ steps.upstream.outputs.v8_branch }}"
+            echo "V8 hash: $V8_HASH"
+            echo "V8 version: ${{ steps.upstream.outputs.v8_version || 'untagged' }}"
+            echo "State: $UPSTREAM_STATE"
+            echo "Build: $should_build"
+            echo "Publish: $should_publish"
+            echo "Release recovery: $recovery"
+          } >>"$GITHUB_STEP_SUMMARY"
 
   build:
-    name: Run V8 Build
-    needs: upgrade
-    if: ${{ needs.upgrade.outputs.has_upgrade == 'true' }}
+    name: Build and validate Stable V8 candidate
+    needs: discover
+    if: needs.discover.outputs.should_build == 'true'
     permissions:
       contents: write
     uses: ./.github/workflows/v8build.yml
     with:
-      v8_hash: ${{ needs.upgrade.outputs.latest_v8_hash }}
+      sha: ${{ needs.discover.outputs.base_sha }}
+      v8_hash: ${{ needs.discover.outputs.v8_hash }}
+      v8_version: ${{ needs.discover.outputs.v8_version }}
+      publish: ${{ needs.discover.outputs.should_publish == 'true' && needs.discover.outputs.state == 'release' }}
 
   release:
-    name: Make A Release
-    needs: build
-    if: ${{ needs.build.outputs.committed == 'true' && github.ref == 'refs/heads/master' }}
+    name: Release validated V8 update
+    needs: [discover, build]
+    if: always() && needs.discover.result == 'success' && (needs.build.outputs.staged == 'true' || needs.discover.outputs.recovery == 'true')
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml
     with:
-      draft: false
-      version: '+0.1.0'
-      sha: ${{ needs.build.outputs.sha }}
+      sha: ${{ needs.build.outputs.sha || needs.discover.outputs.base_sha }}
+      base_sha: ${{ needs.build.outputs.base_sha }}
+      branch: ${{ needs.build.outputs.branch }}
+      version: ${{ needs.build.outputs.version || needs.discover.outputs.recovery_version }}
+
+  report:
+    name: Update V8 upgrade tracking issue
+    needs: [discover, build, release]
+    if: always() && github.ref == 'refs/heads/master' && (github.event_name == 'schedule' || inputs.publish)
+    runs-on: ubuntu-22.04
+    permissions:
+      issues: write
+    steps:
+      - name: Report durable upgrade state
+        env:
+          BUILD_RESULT: ${{ needs.build.result }}
+          DISCOVERY_RESULT: ${{ needs.discover.result }}
+          GH_TOKEN: ${{ github.token }}
+          QUARANTINE_REASON: ${{ needs.discover.outputs.quarantine_reason }}
+          RELEASE_RESULT: ${{ needs.release.result }}
+          UPSTREAM_STATE: ${{ needs.discover.outputs.state }}
+          V8_HASH: ${{ needs.discover.outputs.v8_hash }}
+          V8_VERSION: ${{ needs.discover.outputs.v8_version }}
+        run: |
+          set -euo pipefail
+          gh label create v8-upgrade \
+            --repo "$GITHUB_REPOSITORY" \
+            --color 1d76db \
+            --description 'Automated Stable V8 upgrade state' \
+            --force
+          gh label create blocked \
+            --repo "$GITHUB_REPOSITORY" \
+            --color b60205 \
+            --description 'Automation requires maintainer action' \
+            --force
+
+          if [[ "$DISCOVERY_RESULT" != success ]]; then
+            marker='<!-- v8-upgrade-health -->'
+            title='[V8 upgrade] Stable discovery is blocked'
+            state=blocked
+            detail="Discovery failed before a trustworthy V8 hash was available."
+          else
+            marker="<!-- v8-upgrade-hash:$V8_HASH -->"
+            title="[V8 upgrade] ${V8_VERSION:-untagged $V8_HASH}"
+            state=blocked
+            detail="The automated upgrade did not reach a releasable state."
+            if [[ "$UPSTREAM_STATE" == quarantined ]]; then
+              detail="The Stable V8 hash is quarantined: $QUARANTINE_REASON"
+            elif [[ "$UPSTREAM_STATE" == candidate && ( "$BUILD_RESULT" == success || "$BUILD_RESULT" == skipped ) ]]; then
+              state=candidate-passed
+              detail="The untagged Stable tip passed candidate validation and is waiting for an official V8 tag."
+            elif [[ "$UPSTREAM_STATE" == current && ( "$RELEASE_RESULT" == success || "$RELEASE_RESULT" == skipped ) ]]; then
+              state=current
+              detail="The current Stable V8 hash is already released."
+            elif [[ "$UPSTREAM_STATE" == release && "$RELEASE_RESULT" == success ]]; then
+              state=released
+              detail="The tagged Stable V8 update was released successfully."
+            elif [[ "$BUILD_RESULT" == failure || "$BUILD_RESULT" == cancelled ]]; then
+              detail="Candidate build or validation ended with: $BUILD_RESULT."
+            elif [[ "$RELEASE_RESULT" == failure || "$RELEASE_RESULT" == cancelled ]]; then
+              detail="Promotion or release ended with: $RELEASE_RESULT."
+            fi
+          fi
+
+          issues="$(gh issue list \
+            --repo "$GITHUB_REPOSITORY" \
+            --state all \
+            --label v8-upgrade \
+            --limit 100 \
+            --json number,body,state,labels)"
+          number="$(jq -r --arg marker "$marker" \
+            '[.[] | select((.body // "") | contains($marker))][0].number // empty' \
+            <<<"$issues")"
+
+          if [[ "$state" == released || "$state" == current ]]; then
+            if [[ -n "$number" ]] && jq -e --argjson number "$number" \
+              '.[] | select(.number == $number and .state == "OPEN")' <<<"$issues" >/dev/null; then
+              gh issue close "$number" --repo "$GITHUB_REPOSITORY" \
+                --comment "$detail Run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            fi
+            jq -r --arg marker "$marker" \
+              '.[] | select(.state == "OPEN") | select((.body // "") | contains("<!-- v8-upgrade-state:candidate-passed -->")) | select(((.body // "") | contains($marker)) | not) | .number' \
+              <<<"$issues" \
+              | while read -r superseded; do
+                  gh issue close "$superseded" --repo "$GITHUB_REPOSITORY" \
+                    --comment "Superseded by the current Stable V8 state."
+                done
+            exit 0
+          fi
+
+          body="$RUNNER_TEMP/v8-upgrade.md"
+          {
+            echo "$marker"
+            echo "<!-- v8-upgrade-state:$state -->"
+            echo
+            echo "$detail"
+            echo
+            echo "- V8 hash: \`${V8_HASH:-unknown}\`"
+            echo "- V8 version: \`${V8_VERSION:-untagged}\`"
+            echo "- Workflow run: $GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+            echo
+            echo "The next scheduled run retries non-quarantined failures. Do not close this issue until the state is resolved or superseded."
+          } >"$body"
+
+          labels=(--add-label v8-upgrade)
+          if [[ "$state" == blocked ]]; then
+            labels+=(--add-label blocked)
+          fi
+          if [[ -n "$number" ]]; then
+            gh issue edit "$number" --repo "$GITHUB_REPOSITORY" \
+              --title "$title" --body-file "$body" "${labels[@]}"
+            if [[ "$state" != blocked ]] && jq -e --argjson number "$number" \
+              '.[] | select(.number == $number) | .labels[]? | select(.name == "blocked")' \
+              <<<"$issues" >/dev/null; then
+              gh issue edit "$number" --repo "$GITHUB_REPOSITORY" --remove-label blocked
+            fi
+            if jq -e --argjson number "$number" \
+              '.[] | select(.number == $number and .state == "CLOSED")' <<<"$issues" >/dev/null; then
+              gh issue reopen "$number" --repo "$GITHUB_REPOSITORY"
+            fi
+          else
+            create_labels=(--label v8-upgrade)
+            if [[ "$state" == blocked ]]; then
+              create_labels+=(--label blocked)
+            fi
+            gh issue create --repo "$GITHUB_REPOSITORY" \
+              --title "$title" --body-file "$body" "${create_labels[@]}"
+          fi

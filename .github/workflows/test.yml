@@ -1,5 +1,8 @@
 name: Test
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -8,6 +11,10 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
+      candidate_hash:
+        description: Candidate artifact hash to overlay before testing.
+        required: false
+        type: string
       sha:
         description: "The commit to check out at. Defaults to the parent workflow's github.sha."
         required: false
@@ -15,48 +22,81 @@ on:
 
 jobs:
   test:
-    name: Tests on ${{ matrix.os }} ${{ matrix.arch }} with Go ${{ matrix.go-version }}
+    name: Tests on ${{ matrix.target.os }} ${{ matrix.target.arch }} with Go ${{ matrix.go-version }}
     strategy:
       matrix:
-        os: [darwin, linux]
-        arch: [amd64, arm64]
+        target:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-22.04
+          - os: linux
+            arch: arm64
+            runner: ubuntu-24.04-arm
+          - os: darwin
+            arch: amd64
+            runner: macos-15-intel
+          - os: darwin
+            arch: arm64
+            runner: macos-15
         go-version:
         # Check the earliest and two trailing versions, to keep
         # maintainance of this file reasonable.
         - 1.19
         - oldstable
         - stable
-        include:
-        - os: linux
-          platform: ubuntu-22.04
-        - os: darwin
-          platform: macos-latest
-    runs-on: ${{ matrix.platform }}
+    runs-on: ${{ matrix.target.runner }}
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         ref: ${{ inputs.sha }}
 
-    - name: Install Clang 21 (Linux)
-      if: runner.os == 'Linux'
+    - name: Remove previous generated candidate files
+      if: inputs.candidate_hash != ''
+      env:
+        PLATFORM: ${{ matrix.target.os }}_${{ matrix.target.arch }}
       run: |
-        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-        chmod +x "$RUNNER_TEMP/llvm.sh"
-        sudo "$RUNNER_TEMP/llvm.sh" 21
-        echo "CC=clang-21" >>"$GITHUB_ENV"
-        echo "CXX=clang++-21" >>"$GITHUB_ENV"
+        set -euo pipefail
+        rm -rf deps/include deps/include_libcxx deps/include_libcxxabi
+        find "deps/$PLATFORM" -maxdepth 1 -type f \
+          \( -name 'cgo.go' -o -name 'lib*.a' -o -name libmanifest -o -name SHA256SUMS \) \
+          -delete
 
-    - name: Install Clang 21 (macOS)
-      if: runner.os == 'macOS'
+    - name: Overlay candidate common files
+      if: inputs.candidate_hash != ''
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      with:
+        name: candidate-${{ inputs.candidate_hash }}
+        path: .
+
+    - name: Overlay candidate platform files
+      if: inputs.candidate_hash != ''
+      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      with:
+        name: ${{ matrix.target.os }}_${{ matrix.target.arch }}-${{ inputs.candidate_hash }}
+        path: deps/${{ matrix.target.os }}_${{ matrix.target.arch }}
+
+    - name: Verify candidate checksums
+      if: inputs.candidate_hash != ''
+      env:
+        PLATFORM: ${{ matrix.target.os }}_${{ matrix.target.arch }}
       run: |
-        brew install llvm@21
-        llvm_prefix="$(brew --prefix llvm@21)"
-        echo "CC=$llvm_prefix/bin/clang" >>"$GITHUB_ENV"
-        echo "CXX=$llvm_prefix/bin/clang++" >>"$GITHUB_ENV"
+        set -euo pipefail
+        check_sha256() {
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum --check "$1"
+          else
+            shasum --algorithm 256 --check "$1"
+          fi
+        }
+        (cd deps && check_sha256 include.SHA256SUMS)
+        (cd "deps/$PLATFORM" && check_sha256 SHA256SUMS)
+
+    - name: Install Clang 21
+      uses: ./.github/actions/setup-clang-21
 
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
       with:
         go-version: ${{ matrix.go-version }}
 
@@ -70,20 +110,18 @@ jobs:
         go work init . $(ls ./deps/*_*/cgo.go | xargs -r dirname)
 
     - name: Run Tests With Coverage
-      run: |
-        # https://github.com/stumble/v8go/actions/runs/7363603520/job/20043211523 shows that TestCPUProfileNode can be flaky.
-        go test -v -coverprofile coverage.out ./... || go test -v -coverprofile coverage.out ./...
+      run: go test -v -coverprofile coverage.out ./...
       env:
         CGO_CXXFLAGS: "-nostdinc++ -Werror -Wno-error=#warnings"
 
     - name: Upload Coverage To Codecov
-      uses: codecov/codecov-action@v5
+      uses: codecov/codecov-action@0fb7174895f61a3b6b78fc075e0cd60383518dac # v5
       if: env._HAS_CODECOV_TOKEN == 'true'
       env:
         _HAS_CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN != '' }}
-        OS: ${{ matrix.os }}
-        ARCH: ${{ matrix.arch }}
-        PLATFORM: ${{ matrix.platform }}
+        OS: ${{ matrix.target.os }}
+        ARCH: ${{ matrix.target.arch }}
+        PLATFORM: ${{ matrix.target.runner }}
         GO: ${{ matrix.go-version }}
       with:
         token: ${{ secrets.CODECOV_TOKEN }}
@@ -94,8 +132,9 @@ jobs:
 
     - name: Scan and Upload FOSSA Data
       if: env.FOSSA_API_KEY != '' && github.ref == 'refs/heads/master'
-      run: |
-        curl https://raw.githubusercontent.com/fossas/fossa-cli/master/install.sh | sudo bash
-        fossa analyze
+      uses: fossas/fossa-action@29693cc50323968e039056be419b32989fc5880c # v2.0.0
+      with:
+        api-key: ${{ secrets.FOSSA_API_KEY }}
+        pinned-cli-version: v3.17.16
       env:
         FOSSA_API_KEY: ${{ secrets.FOSSA_API_KEY }}

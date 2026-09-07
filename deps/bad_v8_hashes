@@ -1,5 +1,5 @@
-# File with V8 hashes (see https://chromiumdash.appspot.com/fetch_releases?channel=Stable&platform=Linux&num=1&offset=0)
-# that are not allowed in .github/workflows/v8upgrade.
+# V8 Stable branch-head hashes that are not allowed in
+# .github/workflows/v8upgrade.yml.
 #
 # Hash-lines and empty lines are ignored.
 # The first column is a hash, and the following are a reason.

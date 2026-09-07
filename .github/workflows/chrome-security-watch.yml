@@ -1,0 +1,49 @@
+name: Chrome Security Watch
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: Render notices without changing GitHub Issues
+        default: true
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: chrome-security-watch
+  cancel-in-progress: false
+
+jobs:
+  watch:
+    name: Review official Chrome Stable security posts
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Checkout trusted parser
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Test parser
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+
+      - name: Sync triage issues
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REQUESTED_DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          set -euo pipefail
+          args=(
+            --repository "$GITHUB_REPOSITORY"
+            --assignee Stumble
+            --since-days 14
+          )
+          if [[ "$GITHUB_EVENT_NAME" != schedule || "$GITHUB_REF" != refs/heads/master || "$REQUESTED_DRY_RUN" == true ]]; then
+            args+=(--dry-run)
+          fi
+          python3 tools/chrome_security.py "${args[@]}"

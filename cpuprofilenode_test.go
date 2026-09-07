@@ -11,9 +11,9 @@ import (
 )
 
 func TestCPUProfileNode(t *testing.T) {
-	// CPU profiles are sampling based. Running this test alongside the rest of
-	// the package can starve the profiler long enough for short-lived call
-	// paths to be absent from the profile.
+	// CPU profiles are sampling based. Keep one call stack active for the
+	// entire sample window instead of requiring several short-lived sibling
+	// paths to all appear by chance.
 
 	ctx := v8.NewContext(nil)
 	iso := ctx.Isolate()
@@ -26,7 +26,7 @@ func TestCPUProfileNode(t *testing.T) {
 	title := "cpuprofilenodetest"
 	cpuProfiler.StartProfiling(title)
 
-	_, err := ctx.RunScript(profileScript, "script.js")
+	_, err := ctx.RunScript(profileNodeScript, "script.js")
 	fatalIf(t, err)
 	val, err := ctx.Global().Get("start")
 	fatalIf(t, err)
@@ -47,54 +47,63 @@ func TestCPUProfileNode(t *testing.T) {
 	if rootNode == nil {
 		t.Fatal("expected top down root not to be nil")
 	}
-	count := rootNode.GetChildrenCount()
-	var startNode *v8.CPUProfileNode
-	for i := 0; i < count; i++ {
-		if rootNode.GetChild(i).GetFunctionName() == "start" {
-			startNode = rootNode.GetChild(i)
-		}
-	}
-	if startNode == nil {
-		t.Fatal("expected node not to be nil")
-	}
-	checkNode(t, startNode, "script.js", "start", 23, 15)
-
-	parentName := startNode.GetParent().GetFunctionName()
-	if parentName != "(root)" {
-		t.Fatalf("expected (root), but got %v", parentName)
-	}
-
-	fooNode := findChild(t, startNode, "foo")
-	checkNode(t, fooNode, "script.js", "foo", 15, 13)
-
-	delayNode := findChild(t, fooNode, "delay")
-	checkNode(t, delayNode, "script.js", "delay", 12, 15)
-
-	barNode := findChild(t, fooNode, "bar")
-	checkNode(t, barNode, "script.js", "bar", 13, 13)
-
-	loopNode := findChild(t, delayNode, "loop")
+	loopNode := findDescendant(t, rootNode, "loop")
 	checkNode(t, loopNode, "script.js", "loop", 1, 14)
 
-	bazNode := findChild(t, fooNode, "baz")
-	checkNode(t, bazNode, "script.js", "baz", 14, 13)
+	delayNode := loopNode.GetParent()
+	checkNode(t, delayNode, "script.js", "delay", 12, 15)
+	fooNode := delayNode.GetParent()
+	checkNode(t, fooNode, "script.js", "foo", 13, 13)
+	startNode := fooNode.GetParent()
+	checkNode(t, startNode, "script.js", "start", 14, 15)
+	if parentName := startNode.GetParent().GetFunctionName(); parentName != "(root)" {
+		t.Fatalf("expected (root), but got %v", parentName)
+	}
 }
 
-func findChild(t *testing.T, node *v8.CPUProfileNode, functionName string) *v8.CPUProfileNode {
+func findDescendant(t *testing.T, node *v8.CPUProfileNode, functionName string) *v8.CPUProfileNode {
 	t.Helper()
 
-	var child *v8.CPUProfileNode
-	count := node.GetChildrenCount()
-	for i := 0; i < count; i++ {
-		if node.GetChild(i).GetFunctionName() == functionName {
-			child = node.GetChild(i)
+	for i := 0; i < node.GetChildrenCount(); i++ {
+		child := node.GetChild(i)
+		if child.GetFunctionName() == functionName {
+			return child
+		}
+		if descendant := findDescendantOrNil(child, functionName); descendant != nil {
+			return descendant
 		}
 	}
-	if child == nil {
-		t.Fatal("failed to find child node")
-	}
-	return child
+	t.Fatalf("failed to find descendant node %q", functionName)
+	return nil
 }
+
+func findDescendantOrNil(node *v8.CPUProfileNode, functionName string) *v8.CPUProfileNode {
+	for i := 0; i < node.GetChildrenCount(); i++ {
+		child := node.GetChild(i)
+		if child.GetFunctionName() == functionName {
+			return child
+		}
+		if descendant := findDescendantOrNil(child, functionName); descendant != nil {
+			return descendant
+		}
+	}
+	return nil
+}
+
+const profileNodeScript = `function loop(timeout) {
+  this.mmm = 0;
+  var start = Date.now();
+  while (Date.now() - start < timeout) {
+    var n = 10;
+    while(n > 1) {
+      n--;
+      this.mmm += n * n * n;
+    }
+  }
+}
+function delay(timeout) { loop(timeout); }
+function foo(timeout) { delay(timeout); }
+function start(timeout) { foo(timeout); }`
 
 func checkNode(t *testing.T, node *v8.CPUProfileNode, scriptResourceName string, functionName string, line, column int) {
 	t.Helper()

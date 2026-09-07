@@ -1,5 +1,8 @@
 name: Code Format
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -13,17 +16,12 @@ jobs:
     runs-on: ubuntu-22.04
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
         fetch-depth: 1
 
     - name: Install Clang 21
-      run: |
-        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-        chmod +x "$RUNNER_TEMP/llvm.sh"
-        sudo "$RUNNER_TEMP/llvm.sh" 21
-        echo "CC=clang-21" >>"$GITHUB_ENV"
-        echo "CXX=clang++-21" >>"$GITHUB_ENV"
+      uses: ./.github/actions/setup-clang-21
 
     - name: go fmt
       run: go fmt

@@ -1,6 +1,6 @@
 # Execute JavaScript from Go
 
-<a href="https://github.com/stumble/v8go/releases"><img src="https://img.shields.io/github/v/release/tommie/v8go" alt="Github release"></a>
+<a href="https://github.com/stumble/v8go/releases"><img src="https://img.shields.io/github/v/release/stumble/v8go" alt="Github release"></a>
 [![Go Report Card](https://goreportcard.com/badge/github.com/stumble/v8go)](https://goreportcard.com/report/github.com/stumble/v8go)
 [![Go Reference](https://pkg.go.dev/badge/github.com/stumble/v8go.svg)](https://pkg.go.dev/github.com/stumble/v8go)
 [![Test](https://github.com/stumble/v8go/actions/workflows/test.yml/badge.svg)](https://github.com/stumble/v8go/actions/workflows/test.yml)
@@ -34,7 +34,8 @@ Major differences include
 * A rebuilt build pipeline, being more consistent.
   * We now build everything at once.
     Originally, the build pipeline left the master branch inconsistent between header files and libraries of individual architectures.
-  * The library builder commits directly, without a PR, avoiding PR blow-up.
+  * Stable V8 candidates are assembled and tested before the exact release
+    commit can advance the default branch, avoiding partially built releases.
   * Using ccache, based on https://github.com/kuoruan/libv8.
 
 ## Requirements
@@ -46,6 +47,11 @@ testing, for example:
 ```sh
 CC=clang-21 CXX=clang++-21 CGO_CXXFLAGS=-nostdinc++ go test ./...
 ```
+
+## Security
+
+Only the latest release is supported. Report vulnerabilities privately and read
+the upstream update/advisory policy in [SECURITY.md](SECURITY.md).
 
 ## Usage
 

@@ -1,0 +1,50 @@
+name: Set up Clang 21
+description: Install the v8go compiler with authenticated Linux repository metadata
+
+runs:
+  using: composite
+  steps:
+    - name: Install Clang 21 (Linux)
+      if: runner.os == 'Linux'
+      shell: bash
+      run: |
+        set -euo pipefail
+        readonly llvm_fingerprint=6084F3CF814B57C1CF12EFD515CF4D18AF4F7421
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg
+        curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 \
+          --fail --silent --show-error \
+          https://apt.llvm.org/llvm-snapshot.gpg.key \
+          --output "$RUNNER_TEMP/llvm-snapshot.gpg.key"
+        install -d -m 0700 "$RUNNER_TEMP/llvm-gnupg"
+        gpg --batch --homedir "$RUNNER_TEMP/llvm-gnupg" \
+          --import-options import-minimal \
+          --import "$RUNNER_TEMP/llvm-snapshot.gpg.key"
+        gpg --batch --homedir "$RUNNER_TEMP/llvm-gnupg" \
+          --export-options export-minimal \
+          --export "$llvm_fingerprint" >"$RUNNER_TEMP/llvm-keyring.gpg"
+        test -s "$RUNNER_TEMP/llvm-keyring.gpg"
+        gpg --batch --show-keys --with-colons \
+          "$RUNNER_TEMP/llvm-keyring.gpg" >"$RUNNER_TEMP/llvm-key-details"
+        test "$(grep -c '^pub:' "$RUNNER_TEMP/llvm-key-details")" -eq 1
+        grep -Fxq "fpr:::::::::$llvm_fingerprint:" "$RUNNER_TEMP/llvm-key-details"
+        sudo install -m 0644 "$RUNNER_TEMP/llvm-keyring.gpg" \
+          /usr/share/keyrings/llvm-archive-keyring.gpg
+        . /etc/os-release
+        readonly llvm_codename="${UBUNTU_CODENAME:-$VERSION_CODENAME}"
+        echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] https://apt.llvm.org/$llvm_codename/ llvm-toolchain-$llvm_codename-21 main" \
+          | sudo tee /etc/apt/sources.list.d/llvm.list >/dev/null
+        sudo apt-get update
+        sudo apt-get install -y --no-install-recommends clang-21 libclang-rt-21-dev
+        echo "CC=clang-21" >>"$GITHUB_ENV"
+        echo "CXX=clang++-21" >>"$GITHUB_ENV"
+
+    - name: Install Clang 21 (macOS)
+      if: runner.os == 'macOS'
+      shell: bash
+      run: |
+        set -euo pipefail
+        brew install llvm@21
+        llvm_prefix="$(brew --prefix llvm@21)"
+        echo "CC=$llvm_prefix/bin/clang" >>"$GITHUB_ENV"
+        echo "CXX=$llvm_prefix/bin/clang++" >>"$GITHUB_ENV"

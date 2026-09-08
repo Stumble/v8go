@@ -1,5 +1,8 @@
 name: Leak Check
 
+permissions:
+  contents: read
+
 on:
   push:
     branches:
@@ -8,6 +11,10 @@ on:
   workflow_dispatch:
   workflow_call:
     inputs:
+      candidate_hash:
+        description: Candidate artifact hash to overlay before testing.
+        required: false
+        type: string
       sha:
         description: "The commit to check out at. Defaults to the parent workflow's github.sha."
         required: false
@@ -19,28 +26,57 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v4
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       with:
         ref: ${{ inputs.sha }}
 
-    - name: Install Clang 21
+    - name: Remove previous generated candidate files
+      if: inputs.candidate_hash != ''
       run: |
-        curl -fsSL https://apt.llvm.org/llvm.sh -o "$RUNNER_TEMP/llvm.sh"
-        chmod +x "$RUNNER_TEMP/llvm.sh"
-        sudo "$RUNNER_TEMP/llvm.sh" 21
-        echo "CC=clang-21" >>"$GITHUB_ENV"
-        echo "CXX=clang++-21" >>"$GITHUB_ENV"
+        set -euo pipefail
+        rm -rf deps/include deps/include_libcxx deps/include_libcxxabi
+        find deps/linux_amd64 -maxdepth 1 -type f \
+          \( -name 'cgo.go' -o -name 'lib*.a' -o -name libmanifest -o -name SHA256SUMS \) \
+          -delete
+
+    - name: Overlay candidate common files
+      if: inputs.candidate_hash != ''
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: candidate-${{ inputs.candidate_hash }}
+        path: .
+
+    - name: Overlay candidate platform files
+      if: inputs.candidate_hash != ''
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+      with:
+        name: linux_amd64-${{ inputs.candidate_hash }}
+        path: deps/linux_amd64
+
+    - name: Verify candidate checksums
+      if: inputs.candidate_hash != ''
+      run: |
+        set -euo pipefail
+        (cd deps && sha256sum --check include.SHA256SUMS)
+        (cd deps/linux_amd64 && sha256sum --check SHA256SUMS)
+
+    - name: Install Clang 21
+      uses: ./.github/actions/setup-clang-21
 
     - name: Install Go
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version: stable
 
     - name: Set Up Workspace
       # Submodules shouldn't cause a download.
       run: |
-        set -o pipefail
-        go work init . $(ls ./deps/*_*/cgo.go | xargs -r dirname)
+        set -euo pipefail
+        submodules=()
+        for cgo_file in ./deps/*_*/cgo.go; do
+          submodules+=("${cgo_file%/cgo.go}")
+        done
+        go work init . "${submodules[@]}"
 
     - name: Build Test
       env:

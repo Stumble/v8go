@@ -3,140 +3,167 @@ name: Release
 on:
   workflow_dispatch:
     inputs:
-      draft:
-        description: Make Draft
-        default: false
-        required: true
-        type: boolean
-      version:
-        description: "Version ([+]X.Y.Z)"
+      sha:
+        description: Existing commit on master to release; defaults to this ref
         required: false
+        type: string
+      version:
+        description: Existing changelog version, for example v0.37.0
+        required: true
         type: string
   workflow_call:
     inputs:
-      draft:
-        description: Whether to make this a draft release, or a finished release.
-        default: false
-        required: false
-        type: boolean
       sha:
-        description: "The commit to check out at. Defaults to the parent workflow's github.sha."
+        description: Exact staged release commit
+        required: true
+        type: string
+      base_sha:
+        description: Expected current master before promotion
+        required: true
+        type: string
+      branch:
+        description: Temporary automation branch to remove after success
         required: false
         type: string
       version:
-        description: The version to release as. If it starts with a plus, it is relative to the previous release.
+        description: Existing changelog version, for example v0.37.0
         required: true
         type: string
     outputs:
       sha:
-        description: The resulting SHA commitish.
+        description: Released commit
         value: ${{ jobs.release.outputs.sha }}
+      url:
+        description: GitHub release URL
+        value: ${{ jobs.release.outputs.url }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v8-release
+  cancel-in-progress: false
 
 jobs:
   test:
-    name: Test
+    name: Test exact release commit
     permissions:
       contents: read
     uses: ./.github/workflows/test.yml
     with:
-      sha: ${{ inputs.sha }}
+      sha: ${{ inputs.sha || github.sha }}
 
   leakcheck:
-    name: Test (leakcheck)
+    name: Leakcheck exact release commit
     permissions:
       contents: read
     uses: ./.github/workflows/leakcheck.yml
     with:
-      sha: ${{ inputs.sha }}
+      sha: ${{ inputs.sha || github.sha }}
 
   release:
-    name: Release
+    name: Promote and release exact commit
     needs: [test, leakcheck]
     runs-on: ubuntu-22.04
     permissions:
       contents: write
     outputs:
-      committed: ${{ steps.commit_changelog.outputs.committed }}
-      sha: ${{ steps.commit_changelog.outputs.commit_long_sha }}
+      sha: ${{ steps.publish.outputs.sha }}
+      url: ${{ steps.publish.outputs.url }}
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        fetch-depth: 1
-        ref: ${{ inputs.sha }}
+      - name: Checkout exact tested commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 3
+          ref: ${{ inputs.sha || github.sha }}
 
-    - name: Mark Release In Changelog
-      if: ${{ inputs.version }}
-      run: |
-        ./tools/modifychangelog.py --release "${{ inputs.version }}" --inplace CHANGELOG.md
+      - id: publish
+        name: Fast-forward master and create immutable release
+        env:
+          EXPECTED_BASE_SHA: ${{ inputs.base_sha }}
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_BRANCH: ${{ inputs.branch }}
+          RELEASE_VERSION: ${{ inputs.version }}
+          TESTED_SHA: ${{ inputs.sha || github.sha }}
+        run: |
+          set -euo pipefail
+          [[ "$TESTED_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RELEASE_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          test "$(git rev-parse HEAD)" = "$TESTED_SHA"
+          changelog_version="$(sed -nE 's/^## \[(v[0-9]+\.[0-9]+\.[0-9]+)\].*/\1/p' CHANGELOG.md | head -n1)"
+          test "$changelog_version" = "$RELEASE_VERSION"
 
-    - name: Get Changelog Information
-      id: changelog
-      run: |
-        set -o pipefail
+          git fetch --depth=1 origin master
+          remote_master="$(git rev-parse refs/remotes/origin/master)"
+          existing_tag="$(git ls-remote --tags origin "refs/tags/$RELEASE_VERSION" | awk 'NR == 1 { print $1 }')"
+          resolved_tag=""
+          if [[ -n "$existing_tag" ]]; then
+            git fetch origin "refs/tags/$RELEASE_VERSION:refs/tags/$RELEASE_VERSION"
+            resolved_tag="$(git rev-list -n1 "$RELEASE_VERSION")"
+            test "$resolved_tag" = "$TESTED_SHA"
+          fi
 
-        version=$(sed -e 's;^##\s\+\[\(v[0-9.]\+\)\].*;\1; p ; d' CHANGELOG.md | head -n 1)
-        repo="${{ github.repository }}"
-        repo_lower="${repo,,}"
+          if [[ -n "$EXPECTED_BASE_SHA" ]]; then
+            [[ "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+            git merge-base --is-ancestor "$EXPECTED_BASE_SHA" "$TESTED_SHA"
+            if [[ "$remote_master" == "$EXPECTED_BASE_SHA" ]]; then
+              git push origin "$TESTED_SHA:refs/heads/master"
+              remote_master="$TESTED_SHA"
+            elif [[ "$remote_master" != "$TESTED_SHA" ]]; then
+              echo "master moved from expected base $EXPECTED_BASE_SHA to $remote_master" >&2
+              exit 1
+            fi
+          elif [[ "$remote_master" != "$TESTED_SHA" ]]; then
+            comparison="$(gh api \
+              "repos/$GITHUB_REPOSITORY/compare/$TESTED_SHA...$remote_master" \
+              --jq .status)"
+            if [[ "$resolved_tag" != "$TESTED_SHA" || ( "$comparison" != ahead && "$comparison" != identical ) ]]; then
+              echo "manual release target is neither current master nor an existing ancestor tag" >&2
+              exit 1
+            fi
+          fi
 
-        (
-          echo "Full changelog ⇒ [$version](https://github.com/$repo_lower/blob/$version/CHANGELOG.md)"
+          if gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            test -n "$existing_tag"
+            release_url="$(gh release view "$RELEASE_VERSION" --repo "$GITHUB_REPOSITORY" --json url --jq .url)"
+          else
+            (
+              echo "Full changelog ⇒ [$RELEASE_VERSION](https://github.com/${GITHUB_REPOSITORY,,}/blob/$RELEASE_VERSION/CHANGELOG.md)"
+              echo
+              awk -v version="$RELEASE_VERSION" '
+                /^## \[/ && $2 != "[" version "]" { inside = 0 }
+                inside && (inside == 2 || $0) {
+                  sub(/^#/, "")
+                  print
+                  if ($0) { inside = 2 }
+                }
+                /^## \[/ && $2 == "[" version "]" { inside = 1 }
+              ' CHANGELOG.md
+            ) >"$RUNNER_TEMP/release-notes.md"
+            if [[ -n "$existing_tag" ]]; then
+              release_url="$(gh release create "$RELEASE_VERSION" \
+                --repo "$GITHUB_REPOSITORY" \
+                --verify-tag \
+                --title "$RELEASE_VERSION" \
+                --notes-file "$RUNNER_TEMP/release-notes.md")"
+            else
+              release_url="$(gh release create "$RELEASE_VERSION" \
+                --repo "$GITHUB_REPOSITORY" \
+                --target "$TESTED_SHA" \
+                --title "$RELEASE_VERSION" \
+                --notes-file "$RUNNER_TEMP/release-notes.md")"
+            fi
+          fi
 
-          awk -v version="$version" '
-            /^##\s+\[.*?\]\s/ && $2 != "[" version "]" {
-              inside = 0;
-            }
-            inside && (inside == 2 || $0) {
-              gsub(/^#/, "");
-              print;
-              if ($0) { inside = 2; }
-            }
-            /^##\s+\[.*?\]\s/ && $2 == "[" version "]" {
-             inside = 1;
-            }' CHANGELOG.md | \
-            sed -Ez '$ s/\n+$/\n/'
-        ) >releasenotes.md
-
-        echo "version=$version" >>"$GITHUB_OUTPUT"
-
-    - id: commit_changelog
-      name: Commit
-      if: ${{ inputs.version }}
-      uses: EndBug/add-and-commit@v9
-      with:
-        add: CHANGELOG.md
-        fetch: false
-        push: origin HEAD:${{ github.ref_name }}
-        message: |
-          Update changelog to ${{ steps.changelog.outputs.version }}
-
-          Auto-generated by GitHub workflow release.
-
-    - id: find_commit
-      name: Determine Commit To Release
-      run: |
-        changelog='${{ steps.commit_changelog.outputs.commit_long_sha }}'
-        original='${{ github.sha }}'
-
-        # When using push: origin HEAD:x, the status output looks like "HEAD x".
-        commit_sha="${changelog:-$original}"
-        commit_sha="${commit_sha#HEAD }"
-
-        echo "commit=$commit_sha" >>"$GITHUB_OUTPUT"
-
-    - id: create_release
-      name: Create Release
-      uses: ncipollo/release-action@v1
-      with:
-        commit: ${{ steps.find_commit.outputs.commit }}
-        tag: ${{ steps.changelog.outputs.version }}
-        bodyFile: releasenotes.md
-        draft: ${{ inputs.draft }}
-        allowUpdates: true
-        updateOnlyUnreleased: true
-
-    - name: Create Summary
-      run: |
-        echo "Tag: ${{ steps.changelog.outputs.version }}" >>"$GITHUB_STEP_SUMMARY"
-        echo "Commit: https://github.com/stumble/v8go/commit/${{ steps.find_commit.outputs.commit }}" >>"$GITHUB_STEP_SUMMARY"
-        echo "Release: ${{ steps.create_release.outputs.html_url }}" >>"$GITHUB_STEP_SUMMARY"
+          if [[ -n "$RELEASE_BRANCH" && "$RELEASE_BRANCH" == automation/v8-* ]]; then
+            if git ls-remote --exit-code --heads origin "refs/heads/$RELEASE_BRANCH" >/dev/null 2>&1; then
+              git push origin --delete "$RELEASE_BRANCH"
+            fi
+          fi
+          echo "sha=$TESTED_SHA" >>"$GITHUB_OUTPUT"
+          echo "url=$release_url" >>"$GITHUB_OUTPUT"
+          {
+            echo "Released: $RELEASE_VERSION"
+            echo "Commit: $TESTED_SHA"
+            echo "Release: $release_url"
+          } >>"$GITHUB_STEP_SUMMARY"

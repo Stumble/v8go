@@ -8,6 +8,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Track and validate the current Chrome Stable V8 branch tip every four hours,
+  and triage official Chrome security announcements hourly.
+- Stage, checksum, test, and leak-check native V8 updates before publishing an
+  immutable release, with least-privilege workflow permissions and pinned build
+  automation.
+- Pin a depot_tools revision that supports current V8 GCS dependency metadata,
+  and install the Clang 21 sanitizer headers required by leakcheck.
+- Pin current Node 24 releases of GitHub build, cache, artifact, coverage, and
+  repository actions.
+- Document latest-release-only security support and private vulnerability
+  reporting.
+
 ## [v0.36.0] - 2026-09-04
 
 ### Added

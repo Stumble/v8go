@@ -1,0 +1,13 @@
+# v8go release and security trust boundaries
+/.github/ @Stumble
+/SECURITY.md @Stumble
+/docs/security-release-process.md @Stumble
+/tools/chrome_security.py @Stumble
+/tools/v8_update.py @Stumble
+/deps/build.py @Stumble
+/deps/build_common.py @Stumble
+/deps/update_cgo.py @Stumble
+/deps/v8_hash @Stumble
+/deps/bad_v8_hashes @Stumble
+/deps/*_*/ @Stumble
+/patches/ @Stumble

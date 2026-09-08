@@ -2,393 +2,422 @@ name: V8 Build
 
 on:
   workflow_dispatch:
+    inputs:
+      v8_hash:
+        description: Exact V8 Stable branch commit; defaults to deps/v8_hash
+        required: false
+        type: string
+      v8_version:
+        description: Official non-PGO V8 tag at v8_hash; empty means candidate only
+        required: false
+        type: string
   workflow_call:
     inputs:
       sha:
-        description: "The commit to check out at. Defaults to the parent workflow's github.sha."
+        description: Trusted v8go base commit
         required: false
         type: string
       v8_hash:
-        description: The V8 commit hash to build at. Defaults to the previously built version.
+        description: Exact V8 Stable branch commit
+        required: true
+        type: string
+      v8_version:
+        description: Official non-PGO V8 tag at v8_hash; empty means candidate only
         required: false
         type: string
     outputs:
-      committed:
-        description: Whether built files were comitted.
-        value: ${{ jobs.syncsubdeps.outputs.committed }}
-      sha:
-        description: The resulting SHA commitish.
-        value: ${{ jobs.syncsubdeps.outputs.sha }}
+      v8_hash:
+        description: Validated V8 commit
+        value: ${{ jobs.build_common.outputs.v8_hash }}
+      base_sha:
+        description: Trusted v8go base used for validation
+        value: ${{ jobs.build_common.outputs.base_sha }}
+
+permissions:
+  contents: read
+
+env:
+  DEPOT_TOOLS_UPDATE: '0'
+
+concurrency:
+  group: v8-build-${{ github.event.pull_request.number || inputs.v8_hash || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build_common:
-    name: Build Architecture Independent Files
+    name: Build architecture-independent files
     runs-on: ubuntu-22.04
     permissions:
       contents: read
     outputs:
-      v8_hash: ${{ steps.update_v8.outputs.v8_hash }}
+      v8_hash: ${{ steps.target.outputs.v8_hash }}
+      base_sha: ${{ steps.target.outputs.base_sha }}
+      build_key: ${{ steps.target.outputs.build_key }}
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: true
-        fetch-depth: 1
-        ref: ${{ inputs.sha }}
+      - name: Checkout trusted build definition
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: true
+          fetch-depth: 1
+          ref: ${{ inputs.sha }}
 
-    - id: update_v8
-      name: Update to latest V8
-      run: |
-        latest_v8_hash="${{ inputs.v8_hash }}"
-        latest_v8_hash="${latest_v8_hash:-$(<deps/v8_hash)}"
-        cd deps/v8
-        git fetch --depth=1 origin "$latest_v8_hash"
-        git checkout "$latest_v8_hash"
-
-        echo "v8_hash=$latest_v8_hash" >>"$GITHUB_OUTPUT"
-
-    - name: Apply Patches
-      run: |
-        set -euo pipefail
-        shopt -s nullglob
-        patches=(patches/*.patch)
-        for f in "${patches[@]}"; do
-          if patch --dry-run --forward --batch -p1 -i "$f" >/dev/null 2>&1; then
-            echo "Apply $f"
-            patch --forward --batch -p1 -i "$f"
-          elif patch --dry-run --reverse --batch -p1 -i "$f" >/dev/null 2>&1; then
-            echo "Skip already-applied patch $f"
-          else
-            echo "Patch no longer applies: $f" >&2
+      - id: target
+        name: Validate build target
+        env:
+          REQUESTED_V8_HASH: ${{ inputs.v8_hash }}
+        run: |
+          set -euo pipefail
+          v8_hash="$REQUESTED_V8_HASH"
+          v8_hash="${v8_hash:-$(tr -d '[:space:]' < deps/v8_hash)}"
+          [[ "$v8_hash" =~ ^[0-9a-f]{40}$ ]] || {
+            echo "invalid V8 hash" >&2
             exit 1
-          fi
-        done
+          }
+          build_key="$({
+            git rev-parse HEAD:deps/depot_tools
+            find deps -maxdepth 1 -type f \
+              \( -name 'build*.py' -o -name update_cgo.py -o -name build-requirements.txt \) \
+              -print0 | sort -z | xargs -0 sha256sum
+            find patches -maxdepth 1 -type f -name '*.patch' -print0 \
+              | sort -z | xargs -0 sha256sum
+          } | sha256sum | awk '{ print $1 }')"
+          {
+            echo "v8_hash=$v8_hash"
+            echo "base_sha=$(git rev-parse HEAD)"
+            echo "build_key=$build_key"
+          } >>"$GITHUB_OUTPUT"
 
-    - name: Create include files
-      run: cd deps && ./build_common.py
+      - name: Checkout exact V8 source
+        env:
+          V8_HASH: ${{ steps.target.outputs.v8_hash }}
+        run: |
+          set -euo pipefail
+          git -C deps/v8 fetch --depth=1 origin "$V8_HASH"
+          git -C deps/v8 checkout --detach "$V8_HASH"
+          test "$(git -C deps/v8 rev-parse HEAD)" = "$V8_HASH"
 
-    - name: Upload include/ Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        # The name matches the directory under deps/.
-        name: include
-        if-no-files-found: error
-        path: |
-          deps/include/
-          deps/include_libcxx/
-          deps/include_libcxxabi/
-        retention-days: 2
+      - name: Apply maintained patches
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          patches=(patches/*.patch)
+          for patch_file in "${patches[@]}"; do
+            if patch --dry-run --forward --batch -p1 -i "$patch_file" >/dev/null 2>&1; then
+              patch --forward --batch -p1 -i "$patch_file"
+            elif ! patch --dry-run --reverse --batch -p1 -i "$patch_file" >/dev/null 2>&1; then
+              echo "patch no longer applies: $patch_file" >&2
+              exit 1
+            fi
+          done
+
+      - name: Create include files
+        run: cd deps && ./build_common.py
+
+      - name: Hash common files
+        run: |
+          set -euo pipefail
+          cd deps
+          find include include_libcxx include_libcxxabi -type f -print0 \
+            | sort -z \
+            | xargs -0 sha256sum >include.SHA256SUMS
+          sha256sum --check include.SHA256SUMS
+
+      - name: Upload common files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: include-${{ steps.target.outputs.v8_hash }}
+          if-no-files-found: error
+          path: |
+            deps/include/
+            deps/include_libcxx/
+            deps/include_libcxxabi/
+            deps/include.SHA256SUMS
+          retention-days: 2
 
   build:
-    name: Build V8 for ${{ matrix.os }} ${{ matrix.arch }}
+    name: Build V8 for ${{ matrix.target.os }} ${{ matrix.target.arch }}
     needs: build_common
     permissions:
       contents: read
     strategy:
       fail-fast: false
       matrix:
-        os: [darwin, linux]
-        arch: [amd64, arm64]
-        include:
-        - os: linux
-          platform: ubuntu-22.04
-        - os: darwin
-          platform: macos-latest
-    runs-on: ${{ matrix.platform }}
+        target:
+          - os: linux
+            arch: amd64
+            runner: ubuntu-22.04
+          - os: linux
+            arch: arm64
+            runner: ubuntu-22.04
+          - os: darwin
+            arch: amd64
+            runner: macos-15
+          - os: darwin
+            arch: arm64
+            runner: macos-15
+    runs-on: ${{ matrix.target.runner }}
     steps:
-    - name: Install g++-aarch64-linux-gnu
-      if: matrix.os == 'linux' && matrix.arch == 'arm64'
-      run: sudo apt update && sudo apt install g++-aarch64-linux-gnu -y
+      - name: Checkout trusted build definition
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          submodules: true
+          fetch-depth: 1
+          ref: ${{ inputs.sha }}
 
-    - name: Install setuptools
-      if: matrix.platform == 'macos-latest'
-      run: python3 -m pip install --upgrade setuptools
-      env:
-        # https://stackoverflow.com/a/76469774
-        PIP_BREAK_SYSTEM_PACKAGES: '1'
+      - name: Install Linux ARM64 cross compiler
+        if: matrix.target.os == 'linux' && matrix.target.arch == 'arm64'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends g++-aarch64-linux-gnu
 
-    - name: Install CCache
-      if: matrix.platform == 'ubuntu-22.04'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -yq ccache
-        sudo update-ccache-symlinks
+      - name: Install pinned Python build requirements
+        if: runner.os == 'macOS'
+        env:
+          PIP_BREAK_SYSTEM_PACKAGES: '1'
+        run: >-
+          python3 -m pip install
+          --disable-pip-version-check
+          --no-deps
+          --only-binary=:all:
+          --require-hashes
+          -r deps/build-requirements.txt
 
-        echo "/usr/lib/ccache" >> "$GITHUB_PATH"
+      - name: Install CCache
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ccache
+          sudo update-ccache-symlinks
+          echo "/usr/lib/ccache" >>"$GITHUB_PATH"
 
-    - name: Install CCache
-      if: matrix.platform == 'macos-latest'
-      run: |
-        brew install ccache
+      - name: Install CCache
+        if: runner.os == 'macOS'
+        run: |
+          brew install ccache
+          echo "$(brew --prefix ccache)/libexec" >>"$GITHUB_PATH"
 
-        echo "$(brew --prefix ccache)/libexec" >> "$GITHUB_PATH"
+      - name: Checkout exact V8 source
+        env:
+          V8_HASH: ${{ needs.build_common.outputs.v8_hash }}
+        run: |
+          set -euo pipefail
+          git -C deps/v8 fetch --depth=1 origin "$V8_HASH"
+          git -C deps/v8 checkout --detach "$V8_HASH"
+          test "$(git -C deps/v8 rev-parse HEAD)" = "$V8_HASH"
 
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: true
-        fetch-depth: 1
-        ref: ${{ inputs.sha }}
+      - name: Apply maintained patches
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          patches=(patches/*.patch)
+          for patch_file in "${patches[@]}"; do
+            if patch --dry-run --forward --batch -p1 -i "$patch_file" >/dev/null 2>&1; then
+              patch --forward --batch -p1 -i "$patch_file"
+            elif ! patch --dry-run --reverse --batch -p1 -i "$patch_file" >/dev/null 2>&1; then
+              echo "patch no longer applies: $patch_file" >&2
+              exit 1
+            fi
+          done
 
-    - name: Update to latest V8
-      run: |
-        latest_v8_hash="${{ needs.build_common.outputs.v8_hash }}"
-        cd deps/v8
-        git fetch --depth=1 origin "$latest_v8_hash"
-        git checkout "$latest_v8_hash"
+      - name: Configure CCache
+        run: |
+          ccache_dir="$RUNNER_TEMP/ccache"
+          mkdir -p "$ccache_dir"
+          {
+            echo "CCACHE_DIR=$ccache_dir"
+            echo "CCACHE_CPP2=yes"
+            echo "CCACHE_SLOPPINESS=time_macros"
+          } >>"$GITHUB_ENV"
 
-    - name: Apply Patches
-      run: |
-        set -euo pipefail
-        shopt -s nullglob
-        patches=(patches/*.patch)
-        for f in "${patches[@]}"; do
-          if patch --dry-run --forward --batch -p1 -i "$f" >/dev/null 2>&1; then
-            echo "Apply $f"
-            patch --forward --batch -p1 -i "$f"
-          elif patch --dry-run --reverse --batch -p1 -i "$f" >/dev/null 2>&1; then
-            echo "Skip already-applied patch $f"
+      - name: Restore exact CCache
+        id: restore-ccache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: libv8:ccache:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
+
+      - name: Restore exact V8 build cache
+        id: restore-v8-build
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: deps/.build/${{ matrix.target.os }}_${{ matrix.target.arch }}
+          key: libv8:v8build:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
+
+      - name: Update depot_tools fetch config
+        run: |
+          set -euo pipefail
+          git -C deps/depot_tools config --unset-all remote.origin.fetch || true
+          git -C deps/depot_tools config --add remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
+
+      - name: Bootstrap pinned depot_tools
+        run: |
+          set -euo pipefail
+          cd deps/depot_tools
+          export PATH="$PWD:$PWD/.cipd_bin:$PATH"
+          ./ensure_bootstrap
+          test -s python3_bin_reldir.txt
+          test -x .cipd_bin/luci-auth
+
+      - name: Build exact V8 target
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/deps/depot_tools:$PWD/deps/depot_tools/.cipd_bin:$PATH"
+          ./deps/build.py \
+            --ccache \
+            --verbose \
+            --clang \
+            --arch ${{ matrix.target.arch }} \
+            --os ${{ matrix.target.os }}
+
+      - name: Hash platform files
+        env:
+          PLATFORM: ${{ matrix.target.os }}_${{ matrix.target.arch }}
+        run: |
+          set -euo pipefail
+          cd "deps/$PLATFORM"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum lib*.a libmanifest >SHA256SUMS
+            sha256sum --check SHA256SUMS
           else
-            echo "Patch no longer applies: $f" >&2
-            exit 1
+            shasum --algorithm 256 lib*.a libmanifest >SHA256SUMS
+            shasum --algorithm 256 --check SHA256SUMS
           fi
-        done
 
-    - name: Configure CCache
-      run: |
-        ccacheDir="$HOME/.ccache"
-        mkdir -p "$ccacheDir"
-        echo "CCACHE_DIR=$ccacheDir" >> "$GITHUB_ENV"
-        echo "CCACHE_CPP2=yes" >> "$GITHUB_ENV"
-        echo "CCACHE_SLOPPINESS=time_macros" >> "$GITHUB_ENV"
+      - name: Save exact V8 build cache
+        if: steps.restore-v8-build.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: deps/.build/${{ matrix.target.os }}_${{ matrix.target.arch }}
+          key: libv8:v8build:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
 
-    - name: Restore CCache
-      id: restore-ccache
-      uses: actions/cache/restore@v4
-      with:
-        path: ~/.ccache
-        key: libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py') }}:${{ runner.os }}
-        restore-keys: |
-          libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:
-          ${{ runner.os }}:${{ matrix.os }}:${{ matrix.arch }}:libv8:ccache
+      - name: Save exact CCache
+        if: steps.restore-ccache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: libv8:ccache:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
 
-    - name: Restore V8 Build Cache
-      id: restore-v8-build
-      uses: actions/cache/restore@v4
-      with:
-        path: deps/.build/${{ matrix.os }}_${{ matrix.arch }}
-        key: libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py') }}:${{ runner.os }}
-        restore-keys: |
-          libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:
+      - name: Show CCache status
+        run: ccache -s
 
-    - name: Update depot_tools fetch config
-      run: cd deps/depot_tools && git config --unset-all remote.origin.fetch; git config --add remote.origin.fetch +refs/heads/*:refs/remotes/origin/*
+      - name: Upload platform files
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: ${{ matrix.target.os }}_${{ matrix.target.arch }}-${{ needs.build_common.outputs.v8_hash }}
+          if-no-files-found: error
+          path: |
+            deps/${{ matrix.target.os }}_${{ matrix.target.arch }}/lib*.a
+            deps/${{ matrix.target.os }}_${{ matrix.target.arch }}/libmanifest
+            deps/${{ matrix.target.os }}_${{ matrix.target.arch }}/SHA256SUMS
+          retention-days: 2
 
-    - name: Build V8 (${{ matrix.os }})
-      # Current V8 stable is tested with Clang on Linux as well as macOS.
-      # This also avoids the known GCC/ARM64 failures recorded in
-      # deps/bad_v8_hashes.
-      run: cd deps && ./build.py --ccache --verbose --clang --arch ${{ matrix.arch }} --os ${{ matrix.os }}
-
-    - name: Save V8 Build Cache
-      if: always() && steps.restore-v8-build.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: deps/.build/${{ matrix.os }}_${{ matrix.arch }}
-        key: libv8:v8build:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py') }}:${{ runner.os }}
-
-    - name: Save CCache
-      if: always() && steps.restore-ccache.outputs.cache-hit != 'true'
-      uses: actions/cache/save@v4
-      with:
-        path: ~/.ccache
-        key: libv8:ccache:${{ matrix.os }}:${{ matrix.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ hashFiles('deps/build.py') }}:${{ runner.os }}
-
-    - name: Show CCache Status
-      run: ccache -s
-
-    - name: Upload Artifacts
-      uses: actions/upload-artifact@v4
-      with:
-        # The name matches the directory under deps/.
-        name: ${{ matrix.os }}_${{ matrix.arch }}
-        if-no-files-found: error
-        path: |
-          deps/${{ matrix.os }}_${{ matrix.arch }}/
-          !deps/${{ matrix.os }}_${{ matrix.arch }}/vendor.go
-        retention-days: 2
-
-  commit:
-    name: Commit Built Artifacts
-    needs: [build, build_common]
+  assemble:
+    name: Assemble and verify candidate
+    needs: [build_common, build]
     runs-on: ubuntu-22.04
     permissions:
-      contents: write
-    outputs:
-      committed: ${{ steps.commit.outputs.committed }}
-      sha: ${{ steps.create_summary.outputs.sha }}
+      contents: read
     steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        submodules: true
-        fetch-depth: 1
-        ref: ${{ inputs.sha }}
+      - name: Checkout trusted candidate base
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          fetch-depth: 1
+          ref: ${{ needs.build_common.outputs.base_sha }}
 
-    - id: update_v8
-      name: Update to latest V8
-      run: |
-        latest_v8_hash="${{ needs.build_common.outputs.v8_hash }}"
-        echo "$latest_v8_hash" >deps/v8_hash
+      - name: Remove previous generated files
+        run: |
+          set -euo pipefail
+          find deps -maxdepth 2 -type f -name libmanifest -print0 \
+            | xargs -0 -r -n1 dirname \
+            | xargs -r rm -rf
+          rm -rf deps/include deps/include_libcxx deps/include_libcxxabi
 
-        cd deps/v8
-        git fetch --depth=1 origin "$latest_v8_hash"
-        # --tags is slow, so we do it separately for debugability.
-        git fetch --tags origin
-        # V8 also adds a <version>-pgo tag we don't care about.
-        latest_v8_version="$(git tag --points-at "$latest_v8_hash" | grep -v -- '-pgo' | head -n1)"
-        git checkout "${latest_v8_version:-$latest_v8_hash}"
-        echo "latest_v8_version=${latest_v8_version:-$latest_v8_hash}" >>"$GITHUB_OUTPUT"
+      - name: Download common files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: include-${{ needs.build_common.outputs.v8_hash }}
+          path: deps
 
-    - name: Remove old generated dependencies
-      run: |
-        find deps -maxdepth 2 -type f -name libmanifest | xargs -rn1 dirname | xargs -r rm -fr
-        rm -fr deps/include deps/include_libcxx deps/include_libcxxabi
+      - name: Download Darwin AMD64 files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: darwin_amd64-${{ needs.build_common.outputs.v8_hash }}
+          path: deps/darwin_amd64
 
-    - name: Download Architecture Independent Artifacts
-      uses: actions/download-artifact@v4
-      with:
-        name: include
-        path: deps
+      - name: Download Darwin ARM64 files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: darwin_arm64-${{ needs.build_common.outputs.v8_hash }}
+          path: deps/darwin_arm64
 
-    - name: Download Platform Artifacts
-      uses: actions/download-artifact@v4
-      with:
-        pattern: "*_*"
-        path: deps
+      - name: Download Linux AMD64 files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux_amd64-${{ needs.build_common.outputs.v8_hash }}
+          path: deps/linux_amd64
 
-    - name: Update LDFLAGS in cgo.go
-      run: ./deps/update_cgo.py
+      - name: Download Linux ARM64 files
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: linux_arm64-${{ needs.build_common.outputs.v8_hash }}
+          path: deps/linux_arm64
 
-    - name: Update Changelog
-      run: |
-        ./tools/modifychangelog.py \
-        --unchanged '- Auto-bumped V8 .*' \
-        --changed "- Auto-bumped V8 to ${{ steps.update_v8.outputs.latest_v8_version }}." \
-        --inplace \
-        CHANGELOG.md
+      - name: Verify candidate checksums
+        run: |
+          set -euo pipefail
+          (cd deps && sha256sum --check include.SHA256SUMS)
+          for platform in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            (cd "deps/$platform" && sha256sum --check SHA256SUMS)
+          done
 
-    - id: commit
-      name: Commit
-      uses: EndBug/add-and-commit@v9
-      with:
-        add: |
-          - cgo.go
-          - CHANGELOG.md
-          - deps/*_*/cgo.go
-          - deps/*_*/lib*.a
-          - deps/*_*/libmanifest
-          - deps/include/**
-          - deps/include_libcxx/**
-          - deps/include_libcxxabi/**
-          - deps/depot_tools
-          - deps/v8
-          - deps/v8_hash
-        fetch: false
-        push: origin HEAD:${{ github.ref_name }}
-        message: |
-          Add built V8 libraries at ${{ steps.update_v8.outputs.latest_v8_version }}
+      - name: Update candidate metadata
+        env:
+          V8_HASH: ${{ needs.build_common.outputs.v8_hash }}
+          V8_VERSION: ${{ inputs.v8_version }}
+        run: |
+          set -euo pipefail
+          echo "$V8_HASH" >deps/v8_hash
+          ./deps/update_cgo.py
+          display_version="${V8_VERSION:-$V8_HASH}"
+          ./tools/modifychangelog.py \
+            --unchanged '- Auto-bumped V8 .*' \
+            --changed "- Auto-bumped V8 to $display_version." \
+            --inplace \
+            CHANGELOG.md
 
-          Auto-generated by GitHub workflow v8build.
+      - name: Upload assembled candidate
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: candidate-${{ needs.build_common.outputs.v8_hash }}
+          if-no-files-found: error
+          path: |
+            cgo*.go
+            CHANGELOG.md
+            deps/*_*/cgo.go
+            deps/*_*/go.mod
+            deps/v8_hash
+            deps/include/
+            deps/include_libcxx/
+            deps/include_libcxxabi/
+            deps/include.SHA256SUMS
+          retention-days: 2
 
-    - id: create_summary
-      name: Create Summary
-      if: ${{ steps.commit.outputs.committed == 'true' }}
-      run: |
-        # See https://github.com/simple-git-js/simple-git/issues/12.
-        commit_sha="${{ steps.commit.outputs.commit_long_sha }}"
-        commit_sha="${commit_sha#HEAD }"
-
-        echo "V8 Commit: $(<deps/v8_hash)" >>"$GITHUB_STEP_SUMMARY"
-        echo "V8 Version: ${{ steps.update_v8.outputs.latest_v8_version }}" >>"$GITHUB_STEP_SUMMARY"
-        echo "Commit: https://github.com/stumble/v8go/commit/$commit_sha" >>"$GITHUB_STEP_SUMMARY"
-
-        echo "sha=$commit_sha" >>"$GITHUB_OUTPUT"
-
-    - name: Create Summary (no upgrade)
-      if: ${{ steps.commit.outputs.committed != 'true' }}
-      run: |
-        echo "No commit necessary." >>"$GITHUB_STEP_SUMMARY"
-
-  syncsubdeps:
-    # This job comes after `commit`, because `go mod` needs the commit hash of the built libraries.
-    name: Sync Submodule Dependencies
-    needs: commit
-    if: ${{ needs.commit.outputs.committed == 'true' }}
-    runs-on: ubuntu-22.04
+  candidate_test:
+    name: Test assembled candidate
+    needs: [build_common, assemble]
     permissions:
-      contents: write
-    outputs:
-      committed: ${{ steps.commit.outputs.committed }}
-      sha: ${{ steps.create_summary.outputs.sha }}
-    steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-      with:
-        # Our git log in deps/ requires an arbitrarily deep history.
-        fetch-depth: 0
-        ref: ${{ needs.commit.outputs.sha }}
+      contents: read
+    uses: ./.github/workflows/test.yml
+    with:
+      sha: ${{ needs.build_common.outputs.base_sha }}
+      candidate_hash: ${{ needs.build_common.outputs.v8_hash }}
 
-    - id: info
-      name: Extract Information
-      run: |
-        set -o pipefail
-        submods=( $(ls deps/*_*/cgo.go | xargs -r dirname) )
-
-        # This is the latest commit affecting any file in the submodules.
-        # Thus, this workflow is idempotent.
-        sha="$(git log -n 1 --pretty=format:%H -- "${submods[@]}")"
-
-        echo "submodules=${submods[*]}" >>"$GITHUB_OUTPUT"
-        echo "sha=$sha" >>"$GITHUB_OUTPUT"
-        echo "short-sha=${sha::8}" >>"$GITHUB_OUTPUT"
-
-    - name: Set Up Workspace
-      # Submodules shouldn't cause a download.
-      # TODO: figure out why this isn't enough.
-      run: |
-        submods=( ${{ steps.info.outputs.submodules }} )
-        go work init . "${submods[@]}"
-
-    - name: Update go.mod
-      run: |
-        sha="${{ steps.info.outputs.sha }}"
-        repo="${{ github.repository }}"
-        repo_lower="${repo,,}"
-        submods=( $(for submod in ${{ steps.info.outputs.submodules }}; do echo "github.com/$repo_lower/$submod@$sha" ; done) )
-        go get "${submods[@]}"
-
-    - id: commit
-      name: Commit
-      uses: EndBug/add-and-commit@v9
-      with:
-        add: |
-          go.mod
-          go.sum
-        fetch: false
-        push: origin HEAD:${{ github.ref_name }}
-        message: |
-          Bump go.mod to latest submodules (${{ steps.info.outputs.short-sha }})
-
-          Auto-generated pull request from workflows/v8build.
-
-    - id: create_summary
-      name: Create Summary
-      run: |
-        # See https://github.com/simple-git-js/simple-git/issues/12.
-        commit_sha="${{ steps.commit.outputs.commit_long_sha }}"
-        commit_sha="${commit_sha#HEAD }"
-
-        echo "Commit: https://github.com/stumble/v8go/commit/$commit_sha" >>"$GITHUB_STEP_SUMMARY"
-
-        echo "sha=$commit_sha" >>"$GITHUB_OUTPUT"
+  candidate_leakcheck:
+    name: Leakcheck assembled candidate
+    needs: [build_common, assemble]
+    permissions:
+      contents: read
+    uses: ./.github/workflows/leakcheck.yml
+    with:
+      sha: ${{ needs.build_common.outputs.base_sha }}
+      candidate_hash: ${{ needs.build_common.outputs.v8_hash }}

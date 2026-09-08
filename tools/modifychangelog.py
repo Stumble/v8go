@@ -78,7 +78,8 @@ def main():
             print(file=outf)
             print('### Changed', file=outf)
             print(file=outf)
-            print('## [v{}] - {}'.format(make_release, datetime.datetime.utcnow().strftime('%Y-%m-%d')), file=outf)
+            release_date = datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d')
+            print('## [v{}] - {}'.format(make_release, release_date), file=outf)
         elif not in_unreleased:
             print('## [Unreleased]', file=outf)
         else:

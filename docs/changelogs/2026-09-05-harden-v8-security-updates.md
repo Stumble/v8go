@@ -212,9 +212,9 @@ The first test fails if implementation falls back to Chrome's pinned V8 hash, ac
 
 Workflow structure is checked with a pinned `actionlint`; Python syntax/unit tests and `git diff --check` run locally and in CI. Candidate SHA-256 manifests are deliberately corrupted in a small script-level fixture/check to prove assembly rejects mismatched artifacts before native tests.
 
-### E2E Required: yes
+### E2E Required: no — Alva service E2E is outside this change
 
-The changed contract spans live Chromium endpoints, four hosted runner platforms, GitHub artifacts, staged Git refs, reusable workflows, repository settings, releases, and Issues. Local/unit tests cannot prove those integrations.
+This change does not alter an Alva API, service call, runtime behavior, database, or deployed environment, so the `aldev:e2e` local service stack is not a relevant release gate. Hosted integration validation is still mandatory because the changed contract spans live Chromium endpoints, four GitHub-hosted runner platforms, GitHub artifacts, staged Git refs, reusable workflows, repository settings, releases, and Issues; local/unit tests cannot prove those integrations.
 
 Before merge, dispatch `v8upgrade.yml` on the topic branch. It must discover the then-current Stable tip (observed as `15.2.124.26` during implementation on 2026-09-07), build all four variants, validate the candidate, and stop because the ref is not `master`. Postconditions: no master movement, no v8go tag/release, no default-branch tracking issue, and only bounded workflow artifacts/caches. Separately dispatch `chrome-security-watch.yml` in dry-run mode; it must parse the 2026-09-03 Stable post, identify both public V8 CVEs and the in-the-wild signal, render the intended issue artifact/summary, and create no issue.
 
@@ -272,21 +272,21 @@ Intentionally excluded: no exploit is reproduced; no synthetic GHSA is published
 - The user approved GitHub Private Vulnerability Reporting as the documented private channel and `@Stumble` as CODEOWNER/notification owner, without inventing a security email address.
 - The user approved preparing v8runner locally but withholding publication until repository access returns and the independent hardening PR #2 is freshly reconciled.
 - The user identified the missing Chrome-security-notification path and approved an hourly official-feed watcher that creates assigned triage issues, followed by human confirmation, v8go GHSA publication, and GitHub-native downstream Dependabot security alerts/PRs.
-- GitHub administrator actions remain explicit operational prerequisites: enable Issues, private reporting, and immutable releases in `Stumble/v8go`; apply the protected-branch/tag/workflow ruleset and automation bypass; enable dependency graph, alerts, security updates, and private-dependency access for consumers; add the required jagent Dependabot secret context. These are not represented as completed by repository code.
+- GitHub administrator actions remain explicit operational prerequisites. During review, Issues, vulnerability alerts/Dependabot security updates, Private Vulnerability Reporting, and immutable releases were enabled in `Stumble/v8go` and read back successfully. Protected-branch/tag/workflow rulesets and repository-wide Actions SHA enforcement wait until the new workflow is merged so the old default-branch automation is not locked out. Consumer private-dependency access and Dependabot secret context remain separate owner work.
 - Implementation evidence before review: `python3 -m unittest discover -s tools -p 'test_*.py'` passed 16 tests; live `tools/v8_update.py` resolved Stable `15.2.124.26` at `ba3bbc83...`; a live watcher dry run produced four recent concise notices and flagged the 2026-09-03 in-the-wild V8 event without mutating Issues; `actionlint v1.7.12`, 20 consecutive profiler runs, the complete Go suite, and the leakcheck binary passed. The real four-platform topic-branch workflow runs remain for review.
 
 ## 7. Outcome and Evidence
 
-- Result: the v8go security automation, repository policy, Stable discovery, staged release path, Chrome security watcher, deterministic profiler regression, native-runner validation matrix, and downstream configurations are implemented locally. Review is not complete and nothing was pushed because the mandatory full Alva E2E is blocked by missing pre-existing local artifact-registry fixtures.
+- Result: the v8go security automation, repository policy, Stable discovery, staged release path, Chrome security watcher, deterministic profiler regression, native-runner validation matrix, and downstream configurations are implemented locally. Review is not complete because the required hosted workflow validation has not run; nothing has been pushed yet.
 - Review fixes: the complete diff review corrected ancestor-tag release recovery, macOS checksum generation, stale native archive cleanup, propagation of generated platform linker metadata, bounded/untrusted feed rendering, namespaced/assigned issue state, exact build-input cache identity, successful-only cache publication, and disabled depot_tools self-update. Relevant parser/actionlint checks were rerun after every product/config fix.
 
 | ID | Implementation/evidence | Status |
 |---|---|---|
 | B1 | `tools/v8_update.py` plus four-hour discovery workflow; 17 offline tests and live resolution of `15.2.124.26`/`ba3bbc83...` | DONE |
-| B2 | Four-target build, exact checksums, candidate overlays, staged commit, repeated test/leakcheck, promotion/recovery workflow | PARTIAL — local/static checks pass; hosted four-platform candidate not run because push is blocked |
+| B2 | Four-target build, exact checksums, candidate overlays, staged commit, repeated test/leakcheck, promotion/recovery workflow | PARTIAL — local/static checks pass; hosted four-platform candidate is pending branch publication |
 | B3 | Native four-hour grouped Dependabot files in jagent/v8runner with cooldown exclusion | PARTIAL — repository files pass structural checks; GitHub jobs require default-branch publication |
 | B4 | GHSA policy/runbook and separate security-update groups | PARTIAL — no synthetic advisory; requires a real confirmed vulnerability and GitHub review |
-| B5 | SECURITY, CODEOWNERS, signed LLVM setup, immutable action refs, pinned Python input, permission-scoped workflows, immutable-release runbook | PARTIAL — administrator settings remain unapplied/unverified and Issues are currently disabled |
+| B5 | SECURITY, CODEOWNERS, signed LLVM setup, immutable action refs, pinned Python input, permission-scoped workflows, immutable-release runbook | PARTIAL — Issues, alerts/security updates, private reporting, and immutable releases are enabled; ruleset/SHA enforcement awaits merge |
 | B6 | Main/platform modules grouped; jagent builds on `v0.36.0`; v8runner passes on both `v0.33.1` and a temporary coherent `v0.36.0` set | DONE locally |
 | B7 | Hourly watcher, safe parser/renderer/upsert, assignee/labels, Dash mapping; live dry run identified current V8/in-the-wild notices | DONE locally; hosted workflow dry run pending |
 | F1 | Strict schema/ref/tag/size validation, bounded retries, fail-closed parser tests, automation-health path | DONE locally |
@@ -299,14 +299,14 @@ Intentionally excluded: no exploit is reproduced; no synthetic GHSA is published
 | D3 | Trusted build inputs, staged exact SHA, least privilege, checksums, no master force push | PARTIAL — GitHub ruleset/immutable setting and hosted flow pending |
 | D4–D6 | Consumer-native Dependabot, two lanes, human-only consumer merge/deploy | DONE in repository configuration; external execution pending |
 | D7 | Existing API and `+0.1.0` automation retained; dry changelog render produced `v0.37.0` | DONE |
-| D8 | Primary/local records exist; v8runner remains unpublished pending PR #2 access | DONE |
+| D8 | Primary/local records exist; v8runner access is restored and closed/unmerged PR #2 has no file overlap with this automation branch | DONE |
 | D9 | Official-feed issue bridge implemented with human-only GHSA decision | DONE locally |
 | R1 | GitHub advisory review latency remains external; routine lane mitigates | ACCEPTED/UNVERIFIABLE |
 | R2 | jagent private dependency/Dependabot secret access remains administrator work | OPEN |
 | R3 | Strict upstream validation and fail-closed behavior implemented | MITIGATED locally |
 | R4 | Profiler passed 20 consecutive runs; exact cache/concurrency implemented; hosted native build cost remains | PARTIAL |
-| R5 | API confirmed `Stumble/v8go` Issues are disabled; remaining admin settings unreadable | OPEN/BLOCKING default publication |
-| R6 | v8runner API and git fetch still return repository-not-found to this identity | OPEN/BLOCKING v8runner publication |
+| R5 | Issues, alerts/security updates, private reporting, and immutable releases were enabled/read back with admin access; ruleset/SHA enforcement remains deferred until merge | PARTIAL/MITIGATED |
+| R6 | v8runner access is restored; PR #2 is closed/unmerged and does not overlap the prepared CI/Dependabot files | MITIGATED |
 | R7 | Human applicability/GHSA gate retained; no speculative advisory created | MITIGATED |
 | R8 | Official feed is polled/reprocessed with source links and conservative review classification | MITIGATED; feed SLA remains external |
 
@@ -316,21 +316,20 @@ Intentionally excluded: no exploit is reproduced; no synthetic GHSA is published
   - jagent: YAML parse, `make lint-fix` (zero issues/no diff), and `make build` with Clang 21/`-nostdinc++` — passed.
   - v8runner: YAML/actionlint and Clang 21 lint/build/test — passed on current `v0.33.1`; a temporary detached worktree upgraded v8go plus four platform modules to `v0.36.0`, and lint/build/test passed before cleanup.
   - Secret scan: `gitleaks git --redact` over every task commit in all three repositories — no leaks.
-- Mandatory Alva E2E:
+- Non-gating Alva diagnostic run caused by the earlier scope error:
 
   - Initial `go run . -d start` failed because the existing local-dev jagent installer selected `g++`; retry with `CC=clang-21 CXX=clang++-21 CGO_CXXFLAGS=-nostdinc++` reached full readiness.
   - The first `make e2e-go-v` omitted those variables from test-owned backend restart subprocesses and was invalidated after the reproduced g++ failure.
   - Clean restart plus `CC=clang-21 CXX=clang++-21 CGO_CXXFLAGS=-nostdinc++ make e2e-go-v` ran the full core suite for 220 seconds. Account deletion (including backend restart), conversation durability, filesystem/auth isolation, managed runtime API keys, gateway/inline V8/net/http/ALFS probes, sandbox execution, task lifecycle, and guest viewer behavior passed.
-  - `TestProbe_RunRequireSDK` failed only for `@alva/jstat` and `@alva/algorithm`; `@test/suite` passed. `TestProbe_RunFeedImport` also failed. Each failure is `artifactregistry: not found: no release matches selector "^1.0.0"` for the current local ALFS registry. `docs/ENV_AS_CODE.md` says user/home/API-key setup is sufficient and contains no seed for those packages, confirming current fixture/test drift outside this task's three repository diffs.
+  - `TestProbe_RunRequireSDK` failed only for `@alva/jstat` and `@alva/algorithm`; `@test/suite` passed. `TestProbe_RunFeedImport` also failed. Each failure is `artifactregistry: not found: no release matches selector "^1.0.0"` for the current local ALFS registry. `docs/ENV_AS_CODE.md` says user/home/API-key setup is sufficient and contains no seed for those packages, confirming current fixture/test drift outside this task's three repository diffs. This observation is unrelated and is not a v8go release blocker.
   - `go run . stop` completed after both attempts; final status confirms all local services stopped.
-- Required GitHub E2E: not run. The v8go branch was intentionally not pushed after the mandatory full E2E failure, so the hosted four-platform candidate and Chrome watcher workflow dry-run have no evidence yet.
+- Required hosted integration validation: not run. The branch was not pushed while the irrelevant Alva E2E was mistakenly treated as blocking; the next step is to publish the topic branch and run the four-platform candidate and Chrome watcher dry-run without default-branch mutations.
 - Migration/docs: no data/service migration. Authoritative v8go README, SECURITY policy, security-release runbook, CODEOWNERS, and all three living changelogs were updated.
-- PR/CI/review outcome: no branch or PR was published. Review is blocked rather than clean.
+- PR/CI/review outcome: no branch or PR has been published yet. Review remains pending the hosted workflow checks and current GitHub settings postflight.
 
 ## 8. Remaining Work
 
-- Restore or deliberately seed the current local ALFS artifact-registry releases required by `TestProbe_RunRequireSDK` and `TestProbe_RunFeedImport`, then rerun the complete Clang-scoped `make e2e-go-v`. This is outside the approved v8go/consumer scope and needs its own owner/change record if code or fixtures change.
-- After full E2E passes, push the v8go topic branch and run the required hosted `v8upgrade.yml` candidate plus `chrome-security-watch.yml` dry-run with no master/tag/release/issue mutation.
-- Enable GitHub Issues, Private Vulnerability Reporting, release immutability, and the approved master/tag/workflow rulesets in `Stumble/v8go` before default-branch publication can activate.
+- Push the v8go topic branch and run the required hosted `v8upgrade.yml` candidate plus `chrome-security-watch.yml` dry-run with no master/tag/release/issue mutation.
+- After the new workflow merges, apply the approved master/tag/workflow rulesets and repository-wide Actions SHA-pinning enforcement; the other v8go security settings are already enabled.
 - Configure jagent dependency graph/alerts/security updates, private-repository access, and Dependabot secret context; then verify its first grouped PR after merge.
-- Restore access to `Stumble/v8runner`, re-fetch/reconcile PR #2, rerun current-head checks, and only then publish its prepared branch.
+- PR #2 is now verified closed and unmerged with no workflow/Dependabot overlap. Publish the prepared v8runner branch after a final current-head check, without reviving or overwriting that runtime-hardening work.

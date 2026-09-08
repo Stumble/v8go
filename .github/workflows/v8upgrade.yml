@@ -32,8 +32,8 @@ permissions:
   contents: read
 
 concurrency:
-  group: v8-upgrade
-  cancel-in-progress: false
+  group: v8-upgrade-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   discover:

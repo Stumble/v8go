@@ -40,8 +40,8 @@ env:
   DEPOT_TOOLS_UPDATE: '0'
 
 concurrency:
-  group: v8-build-${{ inputs.v8_hash || github.ref }}
-  cancel-in-progress: false
+  group: v8-build-${{ github.event.pull_request.number || inputs.v8_hash || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   build_common:

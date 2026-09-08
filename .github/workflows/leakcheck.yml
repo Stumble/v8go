@@ -26,7 +26,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
       with:
         ref: ${{ inputs.sha }}
 
@@ -41,14 +41,14 @@ jobs:
 
     - name: Overlay candidate common files
       if: inputs.candidate_hash != ''
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: candidate-${{ inputs.candidate_hash }}
         path: .
 
     - name: Overlay candidate platform files
       if: inputs.candidate_hash != ''
-      uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
       with:
         name: linux_amd64-${{ inputs.candidate_hash }}
         path: deps/linux_amd64
@@ -64,7 +64,7 @@ jobs:
       uses: ./.github/actions/setup-clang-21
 
     - name: Install Go
-      uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+      uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version: stable
 

@@ -55,7 +55,7 @@ jobs:
       build_key: ${{ steps.target.outputs.build_key }}
     steps:
       - name: Checkout trusted build definition
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           submodules: true
           fetch-depth: 1
@@ -123,7 +123,7 @@ jobs:
           sha256sum --check include.SHA256SUMS
 
       - name: Upload common files
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: include-${{ steps.target.outputs.v8_hash }}
           if-no-files-found: error
@@ -158,7 +158,7 @@ jobs:
     runs-on: ${{ matrix.target.runner }}
     steps:
       - name: Checkout trusted build definition
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           submodules: true
           fetch-depth: 1
@@ -231,14 +231,14 @@ jobs:
 
       - name: Restore exact CCache
         id: restore-ccache
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ccache
           key: libv8:ccache:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
 
       - name: Restore exact V8 build cache
         id: restore-v8-build
-        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: deps/.build/${{ matrix.target.os }}_${{ matrix.target.arch }}
           key: libv8:v8build:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
@@ -274,14 +274,14 @@ jobs:
 
       - name: Save exact V8 build cache
         if: steps.restore-v8-build.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: deps/.build/${{ matrix.target.os }}_${{ matrix.target.arch }}
           key: libv8:v8build:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
 
       - name: Save exact CCache
         if: steps.restore-ccache.outputs.cache-hit != 'true'
-        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ccache
           key: libv8:ccache:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
@@ -290,7 +290,7 @@ jobs:
         run: ccache -s
 
       - name: Upload platform files
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: ${{ matrix.target.os }}_${{ matrix.target.arch }}-${{ needs.build_common.outputs.v8_hash }}
           if-no-files-found: error
@@ -308,7 +308,7 @@ jobs:
       contents: read
     steps:
       - name: Checkout trusted candidate base
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
         with:
           fetch-depth: 1
           ref: ${{ needs.build_common.outputs.base_sha }}
@@ -322,31 +322,31 @@ jobs:
           rm -rf deps/include deps/include_libcxx deps/include_libcxxabi
 
       - name: Download common files
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: include-${{ needs.build_common.outputs.v8_hash }}
           path: deps
 
       - name: Download Darwin AMD64 files
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: darwin_amd64-${{ needs.build_common.outputs.v8_hash }}
           path: deps/darwin_amd64
 
       - name: Download Darwin ARM64 files
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: darwin_arm64-${{ needs.build_common.outputs.v8_hash }}
           path: deps/darwin_arm64
 
       - name: Download Linux AMD64 files
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: linux_amd64-${{ needs.build_common.outputs.v8_hash }}
           path: deps/linux_amd64
 
       - name: Download Linux ARM64 files
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: linux_arm64-${{ needs.build_common.outputs.v8_hash }}
           path: deps/linux_arm64
@@ -375,7 +375,7 @@ jobs:
             CHANGELOG.md
 
       - name: Upload assembled candidate
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: candidate-${{ needs.build_common.outputs.v8_hash }}
           if-no-files-found: error

@@ -249,14 +249,25 @@ jobs:
           git -C deps/depot_tools config --unset-all remote.origin.fetch || true
           git -C deps/depot_tools config --add remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'
 
+      - name: Bootstrap pinned depot_tools
+        run: |
+          set -euo pipefail
+          cd deps/depot_tools
+          export PATH="$PWD:$PWD/.cipd_bin:$PATH"
+          ./ensure_bootstrap
+          test -s python3_bin_reldir.txt
+          test -x .cipd_bin/luci-auth
+
       - name: Build exact V8 target
-        run: >-
-          ./deps/build.py
-          --ccache
-          --verbose
-          --clang
-          --arch ${{ matrix.target.arch }}
-          --os ${{ matrix.target.os }}
+        run: |
+          set -euo pipefail
+          export PATH="$PWD/deps/depot_tools:$PWD/deps/depot_tools/.cipd_bin:$PATH"
+          ./deps/build.py \
+            --ccache \
+            --verbose \
+            --clang \
+            --arch ${{ matrix.target.arch }} \
+            --os ${{ matrix.target.os }}
 
       - name: Hash platform files
         env:

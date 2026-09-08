@@ -1,0 +1,189 @@
+name: Stage V8 Release
+
+on:
+  workflow_call:
+    inputs:
+      base_sha:
+        description: Trusted v8go base used for candidate validation
+        required: true
+        type: string
+      v8_hash:
+        description: Validated V8 Stable branch commit
+        required: true
+        type: string
+      v8_version:
+        description: Validated official non-PGO V8 tag
+        required: true
+        type: string
+    outputs:
+      staged:
+        description: Whether the exact release commit was staged
+        value: ${{ jobs.stage.outputs.staged }}
+      sha:
+        description: Exact staged release commit
+        value: ${{ jobs.stage.outputs.sha }}
+      base_sha:
+        description: Base commit from which the release was staged
+        value: ${{ inputs.base_sha }}
+      branch:
+        description: Temporary automation branch
+        value: ${{ jobs.stage.outputs.branch }}
+      version:
+        description: Staged v8go release version
+        value: ${{ jobs.stage.outputs.version }}
+
+permissions:
+  contents: read
+
+concurrency:
+  group: v8-stage-${{ inputs.v8_hash }}
+  cancel-in-progress: false
+
+jobs:
+  stage:
+    name: Stage exact release commit
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    outputs:
+      staged: ${{ steps.result.outputs.staged }}
+      sha: ${{ steps.result.outputs.sha }}
+      branch: ${{ steps.result.outputs.branch }}
+      version: ${{ steps.result.outputs.version }}
+    steps:
+      - name: Checkout trusted release base
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          submodules: true
+          fetch-depth: 0
+          ref: ${{ inputs.base_sha }}
+
+      - name: Remove previous generated release files
+        run: |
+          set -euo pipefail
+          rm -rf deps/include deps/include_libcxx deps/include_libcxxabi
+          for platform in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            find "deps/$platform" -maxdepth 1 -type f \
+              \( -name 'cgo.go' -o -name 'lib*.a' -o -name libmanifest -o -name SHA256SUMS \) \
+              -delete
+          done
+
+      - name: Download common candidate files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: candidate-${{ inputs.v8_hash }}
+          path: .
+
+      - name: Download Darwin AMD64 files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: darwin_amd64-${{ inputs.v8_hash }}
+          path: deps/darwin_amd64
+
+      - name: Download Darwin ARM64 files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: darwin_arm64-${{ inputs.v8_hash }}
+          path: deps/darwin_arm64
+
+      - name: Download Linux AMD64 files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: linux_amd64-${{ inputs.v8_hash }}
+          path: deps/linux_amd64
+
+      - name: Download Linux ARM64 files
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: linux_arm64-${{ inputs.v8_hash }}
+          path: deps/linux_arm64
+
+      - name: Verify official V8 tag
+        env:
+          V8_HASH: ${{ inputs.v8_hash }}
+          V8_VERSION: ${{ inputs.v8_version }}
+        run: |
+          set -euo pipefail
+          [[ "$V8_HASH" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$V8_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git -C deps/v8 fetch --depth=1 origin "$V8_HASH"
+          git -C deps/v8 fetch --depth=1 origin "refs/tags/$V8_VERSION:refs/tags/$V8_VERSION"
+          test "$(git -C deps/v8 rev-list -n1 "$V8_VERSION")" = "$V8_HASH"
+          git -C deps/v8 checkout --detach "$V8_VERSION"
+
+      - name: Verify downloaded checksums
+        run: |
+          set -euo pipefail
+          (cd deps && sha256sum --check include.SHA256SUMS)
+          for platform in darwin_amd64 darwin_arm64 linux_amd64 linux_arm64; do
+            (cd "deps/$platform" && sha256sum --check SHA256SUMS)
+          done
+
+      - id: result
+        name: Commit and publish staging branch
+        env:
+          EXPECTED_BASE_SHA: ${{ inputs.base_sha }}
+          V8_HASH: ${{ inputs.v8_hash }}
+          V8_VERSION: ${{ inputs.v8_version }}
+        run: |
+          set -euo pipefail
+          [[ "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          test "$(git rev-parse HEAD)" = "$EXPECTED_BASE_SHA"
+          branch="automation/v8-${V8_HASH:0:12}"
+          git checkout -b "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add \
+            cgo*.go \
+            CHANGELOG.md \
+            deps/*_*/SHA256SUMS \
+            deps/*_*/cgo.go \
+            deps/*_*/go.mod \
+            deps/*_*/lib*.a \
+            deps/*_*/libmanifest \
+            deps/include \
+            deps/include.SHA256SUMS \
+            deps/include_libcxx \
+            deps/include_libcxxabi \
+            deps/v8 \
+            deps/v8_hash
+          git diff --cached --check
+          git commit -m "Add built V8 libraries at $V8_VERSION"
+          artifact_sha="$(git rev-parse HEAD)"
+
+          previous="$(git ls-remote --heads origin "refs/heads/$branch" | awk 'NR == 1 { print $1 }')"
+          if [[ -n "$previous" ]]; then
+            git push --force-with-lease="refs/heads/$branch:$previous" origin "HEAD:refs/heads/$branch"
+          else
+            git push origin "HEAD:refs/heads/$branch"
+          fi
+
+          submodules=( $(find deps -mindepth 2 -maxdepth 2 -name cgo.go -print | xargs -r -n1 dirname | sort) )
+          go work init . "${submodules[@]}"
+          repo="${GITHUB_REPOSITORY,,}"
+          module_versions=()
+          for submodule in "${submodules[@]}"; do
+            module_versions+=("github.com/$repo/$submodule@$artifact_sha")
+          done
+          GOPROXY=direct go get "${module_versions[@]}"
+          ./tools/modifychangelog.py --release '+0.1.0' --inplace CHANGELOG.md
+          version="$(sed -nE 's/^## \[(v[0-9]+\.[0-9]+\.[0-9]+)\].*/\1/p' CHANGELOG.md | head -n1)"
+          [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          git add go.mod go.sum CHANGELOG.md
+          git diff --cached --check
+          git commit -m "Stage $version"
+          git push origin "HEAD:refs/heads/$branch"
+
+          sha="$(git rev-parse HEAD)"
+          test "$(git merge-base "$EXPECTED_BASE_SHA" "$sha")" = "$EXPECTED_BASE_SHA"
+          echo "staged=true" >>"$GITHUB_OUTPUT"
+          echo "sha=$sha" >>"$GITHUB_OUTPUT"
+          echo "branch=$branch" >>"$GITHUB_OUTPUT"
+          echo "version=$version" >>"$GITHUB_OUTPUT"
+          {
+            echo "V8 hash: $V8_HASH"
+            echo "V8 version: $V8_VERSION"
+            echo "Staging branch: $branch"
+            echo "Staged commit: $sha"
+            echo "v8go version: $version"
+          } >>"$GITHUB_STEP_SUMMARY"

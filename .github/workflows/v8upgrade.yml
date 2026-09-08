@@ -10,6 +10,7 @@ on:
       - '.github/workflows/release.yml'
       - '.github/workflows/test.yml'
       - '.github/workflows/v8build.yml'
+      - '.github/workflows/v8stage.yml'
       - '.github/workflows/v8upgrade.yml'
       - 'cpuprofilenode_test.go'
       - 'deps/build.py'
@@ -167,37 +168,47 @@ jobs:
       sha: ${{ needs.discover.outputs.base_sha }}
       v8_hash: ${{ needs.discover.outputs.v8_hash }}
       v8_version: ${{ needs.discover.outputs.v8_version }}
-      publish: false
 
   build_release:
-    name: Build and stage publishable Stable V8
+    name: Build publishable Stable V8 candidate
     needs: discover
     if: needs.discover.outputs.should_build == 'true' && needs.discover.outputs.should_publish == 'true' && needs.discover.outputs.state == 'release'
     permissions:
-      contents: write
+      contents: read
     uses: ./.github/workflows/v8build.yml
     with:
       sha: ${{ needs.discover.outputs.base_sha }}
       v8_hash: ${{ needs.discover.outputs.v8_hash }}
       v8_version: ${{ needs.discover.outputs.v8_version }}
-      publish: true
+
+  stage:
+    name: Stage validated V8 release
+    needs: [discover, build_release]
+    if: needs.build_release.result == 'success'
+    permissions:
+      contents: write
+    uses: ./.github/workflows/v8stage.yml
+    with:
+      base_sha: ${{ needs.build_release.outputs.base_sha }}
+      v8_hash: ${{ needs.build_release.outputs.v8_hash }}
+      v8_version: ${{ needs.discover.outputs.v8_version }}
 
   release:
     name: Release validated V8 update
-    needs: [discover, build_release]
-    if: always() && needs.discover.result == 'success' && (needs.build_release.outputs.staged == 'true' || needs.discover.outputs.recovery == 'true')
+    needs: [discover, stage]
+    if: always() && needs.discover.result == 'success' && (needs.stage.outputs.staged == 'true' || needs.discover.outputs.recovery == 'true')
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml
     with:
-      sha: ${{ needs.build_release.outputs.sha || needs.discover.outputs.recovery_sha }}
-      base_sha: ${{ needs.build_release.outputs.base_sha }}
-      branch: ${{ needs.build_release.outputs.branch }}
-      version: ${{ needs.build_release.outputs.version || needs.discover.outputs.recovery_version }}
+      sha: ${{ needs.stage.outputs.sha || needs.discover.outputs.recovery_sha }}
+      base_sha: ${{ needs.stage.outputs.base_sha }}
+      branch: ${{ needs.stage.outputs.branch }}
+      version: ${{ needs.stage.outputs.version || needs.discover.outputs.recovery_version }}
 
   report:
     name: Update V8 upgrade tracking issue
-    needs: [discover, build_candidate, build_release, release]
+    needs: [discover, build_candidate, build_release, stage, release]
     if: always() && github.ref == 'refs/heads/master' && (github.event_name == 'schedule' || inputs.publish)
     runs-on: ubuntu-22.04
     permissions:
@@ -212,6 +223,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           QUARANTINE_REASON: ${{ needs.discover.outputs.quarantine_reason }}
           RELEASE_RESULT: ${{ needs.release.result }}
+          STAGE_RESULT: ${{ needs.stage.result }}
           UPSTREAM_STATE: ${{ needs.discover.outputs.state }}
           V8_HASH: ${{ needs.discover.outputs.v8_hash }}
           V8_VERSION: ${{ needs.discover.outputs.v8_version }}
@@ -255,6 +267,8 @@ jobs:
               detail="The tagged Stable V8 update was released successfully."
             elif [[ "$BUILD_RESULT" == failure || "$BUILD_RESULT" == cancelled ]]; then
               detail="Candidate build or validation ended with: $BUILD_RESULT."
+            elif [[ "$STAGE_RESULT" == failure || "$STAGE_RESULT" == cancelled ]]; then
+              detail="Release staging ended with: $STAGE_RESULT."
             elif [[ "$RELEASE_RESULT" == failure || "$RELEASE_RESULT" == cancelled ]]; then
               detail="Promotion or release ended with: $RELEASE_RESULT."
             fi

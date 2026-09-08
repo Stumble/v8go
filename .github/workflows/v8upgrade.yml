@@ -3,6 +3,22 @@ name: V8 Upgrade
 on:
   schedule:
     - cron: '37 */4 * * *'
+  pull_request:
+    paths:
+      - '.github/actions/setup-clang-21/action.yml'
+      - '.github/workflows/leakcheck.yml'
+      - '.github/workflows/release.yml'
+      - '.github/workflows/test.yml'
+      - '.github/workflows/v8build.yml'
+      - '.github/workflows/v8upgrade.yml'
+      - 'cpuprofilenode_test.go'
+      - 'deps/build.py'
+      - 'deps/build_common.py'
+      - 'deps/build-requirements.txt'
+      - 'deps/update_cgo.py'
+      - 'patches/**'
+      - 'tools/v8_update.py'
+      - 'tools/test_v8_update.py'
   workflow_dispatch:
     inputs:
       publish:
@@ -140,10 +156,23 @@ jobs:
             echo "Release recovery: $recovery"
           } >>"$GITHUB_STEP_SUMMARY"
 
-  build:
-    name: Build and validate Stable V8 candidate
+  build_candidate:
+    name: Build read-only Stable V8 candidate
     needs: discover
-    if: needs.discover.outputs.should_build == 'true'
+    if: needs.discover.outputs.should_build == 'true' && !(needs.discover.outputs.should_publish == 'true' && needs.discover.outputs.state == 'release')
+    permissions:
+      contents: read
+    uses: ./.github/workflows/v8build.yml
+    with:
+      sha: ${{ needs.discover.outputs.base_sha }}
+      v8_hash: ${{ needs.discover.outputs.v8_hash }}
+      v8_version: ${{ needs.discover.outputs.v8_version }}
+      publish: false
+
+  build_release:
+    name: Build and stage publishable Stable V8
+    needs: discover
+    if: needs.discover.outputs.should_build == 'true' && needs.discover.outputs.should_publish == 'true' && needs.discover.outputs.state == 'release'
     permissions:
       contents: write
     uses: ./.github/workflows/v8build.yml
@@ -151,24 +180,24 @@ jobs:
       sha: ${{ needs.discover.outputs.base_sha }}
       v8_hash: ${{ needs.discover.outputs.v8_hash }}
       v8_version: ${{ needs.discover.outputs.v8_version }}
-      publish: ${{ needs.discover.outputs.should_publish == 'true' && needs.discover.outputs.state == 'release' }}
+      publish: true
 
   release:
     name: Release validated V8 update
-    needs: [discover, build]
-    if: always() && needs.discover.result == 'success' && (needs.build.outputs.staged == 'true' || needs.discover.outputs.recovery == 'true')
+    needs: [discover, build_release]
+    if: always() && needs.discover.result == 'success' && (needs.build_release.outputs.staged == 'true' || needs.discover.outputs.recovery == 'true')
     permissions:
       contents: write
     uses: ./.github/workflows/release.yml
     with:
-      sha: ${{ needs.build.outputs.sha || needs.discover.outputs.recovery_sha }}
-      base_sha: ${{ needs.build.outputs.base_sha }}
-      branch: ${{ needs.build.outputs.branch }}
-      version: ${{ needs.build.outputs.version || needs.discover.outputs.recovery_version }}
+      sha: ${{ needs.build_release.outputs.sha || needs.discover.outputs.recovery_sha }}
+      base_sha: ${{ needs.build_release.outputs.base_sha }}
+      branch: ${{ needs.build_release.outputs.branch }}
+      version: ${{ needs.build_release.outputs.version || needs.discover.outputs.recovery_version }}
 
   report:
     name: Update V8 upgrade tracking issue
-    needs: [discover, build, release]
+    needs: [discover, build_candidate, build_release, release]
     if: always() && github.ref == 'refs/heads/master' && (github.event_name == 'schedule' || inputs.publish)
     runs-on: ubuntu-22.04
     permissions:
@@ -176,7 +205,8 @@ jobs:
     steps:
       - name: Report durable upgrade state
         env:
-          BUILD_RESULT: ${{ needs.build.result }}
+          CANDIDATE_BUILD_RESULT: ${{ needs.build_candidate.result }}
+          RELEASE_BUILD_RESULT: ${{ needs.build_release.result }}
           BASE_SHA: ${{ needs.discover.outputs.base_sha }}
           DISCOVERY_RESULT: ${{ needs.discover.result }}
           GH_TOKEN: ${{ github.token }}
@@ -187,6 +217,10 @@ jobs:
           V8_VERSION: ${{ needs.discover.outputs.v8_version }}
         run: |
           set -euo pipefail
+          BUILD_RESULT="$RELEASE_BUILD_RESULT"
+          if [[ "$BUILD_RESULT" == skipped ]]; then
+            BUILD_RESULT="$CANDIDATE_BUILD_RESULT"
+          fi
           gh label create v8-upgrade \
             --repo "$GITHUB_REPOSITORY" \
             --color 1d76db \

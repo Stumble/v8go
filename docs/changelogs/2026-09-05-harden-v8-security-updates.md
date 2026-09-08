@@ -216,7 +216,7 @@ Workflow structure is checked with a pinned `actionlint`; Python syntax/unit tes
 
 This change does not alter an Alva API, service call, runtime behavior, database, or deployed environment, so the `aldev:e2e` local service stack is not a relevant release gate. Hosted integration validation is still mandatory because the changed contract spans live Chromium endpoints, four GitHub-hosted runner platforms, GitHub artifacts, staged Git refs, reusable workflows, repository settings, releases, and Issues; local/unit tests cannot prove those integrations.
 
-Before merge, dispatch `v8upgrade.yml` on the topic branch. It must discover the then-current Stable tip (observed as `15.2.124.26` during implementation on 2026-09-07), build all four variants, validate the candidate, and stop because the ref is not `master`. Postconditions: no master movement, no v8go tag/release, no default-branch tracking issue, and only bounded workflow artifacts/caches. The Chrome watcher runs automatically as a pull-request dry run when its workflow/parser changes; it must parse the 2026-09-03 Stable post, identify both public V8 CVEs and the in-the-wild signal, render the intended issue preview, and create no issue.
+Before merge, the relevant pull request automatically invokes the read-only candidate path in `v8upgrade.yml`. It must discover the then-current Stable tip (observed as `15.2.124.26` during implementation on 2026-09-07), build all four variants, validate the candidate, and stop because the ref is not `master`. Postconditions: no write-scoped build call, master movement, staging branch, v8go tag/release, or tracking issue; only bounded workflow artifacts/caches. The Chrome watcher also runs as a pull-request dry run when its workflow/parser changes; it must parse the 2026-09-03 Stable post, identify both public V8 CVEs and the in-the-wild signal, render the intended issue preview, and create no issue.
 
 After merge and administrator preflight, one default-branch manual upgrade run is the controlled production test of repository automation. It may update/release v8go but does not touch jagent, v8runner, staging, or production. Consumer Dependabot jobs are verified only after their configuration reaches each default branch; success is one grouped PR, and failure remains visible without merge.
 
@@ -329,7 +329,7 @@ Intentionally excluded: no exploit is reproduced; no synthetic GHSA is published
 
 ## 8. Remaining Work
 
-- Push the v8go topic branch and run the required hosted `v8upgrade.yml` candidate plus `chrome-security-watch.yml` dry-run with no master/tag/release/issue mutation.
+- Observe the required hosted read-only `v8upgrade.yml` candidate plus `chrome-security-watch.yml` PR dry-run with no master/staging-branch/tag/release/issue mutation.
 - After the new workflow merges, apply the approved master/tag/workflow rulesets and repository-wide Actions SHA-pinning enforcement; the other v8go security settings are already enabled.
 - Configure jagent dependency graph/alerts/security updates, private-repository access, and Dependabot secret context; then verify its first grouped PR after merge.
 - PR #2 is now verified closed and unmerged with no workflow/Dependabot overlap. Publish the prepared v8runner branch after a final current-head check, without reviving or overwriting that runtime-hardening work.

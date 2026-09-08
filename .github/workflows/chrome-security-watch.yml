@@ -3,6 +3,11 @@ name: Chrome Security Watch
 on:
   schedule:
     - cron: '17 * * * *'
+  pull_request:
+    paths:
+      - '.github/workflows/chrome-security-watch.yml'
+      - 'tools/chrome_security.py'
+      - 'tools/test_chrome_security.py'
   workflow_dispatch:
     inputs:
       dry_run:

@@ -24,8 +24,30 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  dry_run:
+    name: Preview official Chrome Stable security posts
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout proposed parser
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Test parser
+        run: python3 -m unittest discover -s tools -p 'test_*.py'
+
+      - name: Render triage preview
+        run: >-
+          python3 tools/chrome_security.py
+          --repository "$GITHUB_REPOSITORY"
+          --assignee Stumble
+          --since-days 14
+          --dry-run
+
   watch:
     name: Review official Chrome Stable security posts
+    if: github.event_name != 'pull_request'
     runs-on: ubuntu-22.04
     permissions:
       contents: read
@@ -48,7 +70,7 @@ jobs:
             --assignee Stumble
             --since-days 14
           )
-          if [[ "$GITHUB_EVENT_NAME" != schedule || "$GITHUB_REF" != refs/heads/master || "$REQUESTED_DRY_RUN" == true ]]; then
+          if [[ "$GITHUB_REF" != refs/heads/master || "$REQUESTED_DRY_RUN" == true ]]; then
             args+=(--dry-run)
           fi
           python3 tools/chrome_security.py "${args[@]}"

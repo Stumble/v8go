@@ -81,9 +81,11 @@ jobs:
             find patches -maxdepth 1 -type f -name '*.patch' -print0 \
               | sort -z | xargs -0 sha256sum
           } | sha256sum | awk '{ print $1 }')"
-          echo "v8_hash=$v8_hash" >>"$GITHUB_OUTPUT"
-          echo "base_sha=$(git rev-parse HEAD)" >>"$GITHUB_OUTPUT"
-          echo "build_key=$build_key" >>"$GITHUB_OUTPUT"
+          {
+            echo "v8_hash=$v8_hash"
+            echo "base_sha=$(git rev-parse HEAD)"
+            echo "build_key=$build_key"
+          } >>"$GITHUB_OUTPUT"
 
       - name: Checkout exact V8 source
         env:
@@ -221,9 +223,11 @@ jobs:
         run: |
           ccache_dir="$RUNNER_TEMP/ccache"
           mkdir -p "$ccache_dir"
-          echo "CCACHE_DIR=$ccache_dir" >>"$GITHUB_ENV"
-          echo "CCACHE_CPP2=yes" >>"$GITHUB_ENV"
-          echo "CCACHE_SLOPPINESS=time_macros" >>"$GITHUB_ENV"
+          {
+            echo "CCACHE_DIR=$ccache_dir"
+            echo "CCACHE_CPP2=yes"
+            echo "CCACHE_SLOPPINESS=time_macros"
+          } >>"$GITHUB_ENV"
 
       - name: Restore exact CCache
         id: restore-ccache

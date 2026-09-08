@@ -158,7 +158,10 @@ jobs:
             git push origin "HEAD:refs/heads/$branch"
           fi
 
-          submodules=( $(find deps -mindepth 2 -maxdepth 2 -name cgo.go -print | xargs -r -n1 dirname | sort) )
+          submodules=()
+          for cgo_file in deps/*_*/cgo.go; do
+            submodules+=("${cgo_file%/cgo.go}")
+          done
           go work init . "${submodules[@]}"
           repo="${GITHUB_REPOSITORY,,}"
           module_versions=()
@@ -176,10 +179,12 @@ jobs:
 
           sha="$(git rev-parse HEAD)"
           test "$(git merge-base "$EXPECTED_BASE_SHA" "$sha")" = "$EXPECTED_BASE_SHA"
-          echo "staged=true" >>"$GITHUB_OUTPUT"
-          echo "sha=$sha" >>"$GITHUB_OUTPUT"
-          echo "branch=$branch" >>"$GITHUB_OUTPUT"
-          echo "version=$version" >>"$GITHUB_OUTPUT"
+          {
+            echo "staged=true"
+            echo "sha=$sha"
+            echo "branch=$branch"
+            echo "version=$version"
+          } >>"$GITHUB_OUTPUT"
           {
             echo "V8 hash: $V8_HASH"
             echo "V8 version: $V8_VERSION"

@@ -71,8 +71,12 @@ jobs:
     - name: Set Up Workspace
       # Submodules shouldn't cause a download.
       run: |
-        set -o pipefail
-        go work init . $(ls ./deps/*_*/cgo.go | xargs -r dirname)
+        set -euo pipefail
+        submodules=()
+        for cgo_file in ./deps/*_*/cgo.go; do
+          submodules+=("${cgo_file%/cgo.go}")
+        done
+        go work init . "${submodules[@]}"
 
     - name: Build Test
       env:

@@ -140,12 +140,14 @@ jobs:
             fi
           fi
 
-          echo "base_sha=$base_sha" >>"$GITHUB_OUTPUT"
-          echo "recovery=$recovery" >>"$GITHUB_OUTPUT"
-          echo "recovery_sha=$recovery_sha" >>"$GITHUB_OUTPUT"
-          echo "recovery_version=$recovery_version" >>"$GITHUB_OUTPUT"
-          echo "should_build=$should_build" >>"$GITHUB_OUTPUT"
-          echo "should_publish=$should_publish" >>"$GITHUB_OUTPUT"
+          {
+            echo "base_sha=$base_sha"
+            echo "recovery=$recovery"
+            echo "recovery_sha=$recovery_sha"
+            echo "recovery_version=$recovery_version"
+            echo "should_build=$should_build"
+            echo "should_publish=$should_publish"
+          } >>"$GITHUB_OUTPUT"
           {
             echo "Chrome Stable: ${{ steps.upstream.outputs.chrome_version }}"
             echo "V8 branch: ${{ steps.upstream.outputs.v8_branch }}"

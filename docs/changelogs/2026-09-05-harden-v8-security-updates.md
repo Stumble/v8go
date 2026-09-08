@@ -280,6 +280,7 @@ Intentionally excluded: no exploit is reproduced; no synthetic GHSA is published
 
 - Result: the v8go security automation, repository policy, Stable discovery, staged release path, Chrome security watcher, deterministic profiler regression, native-runner validation matrix, and downstream configurations are implemented locally. Review is not complete because the required hosted workflow validation has not run; nothing has been pushed yet.
 - Review fixes: the complete diff review corrected ancestor-tag release recovery, macOS checksum generation, stale native archive cleanup, propagation of generated platform linker metadata, bounded/untrusted feed rendering, namespaced/assigned issue state, exact build-input cache identity, successful-only cache publication, and disabled depot_tools self-update. Relevant parser/actionlint checks were rerun after every product/config fix.
+- Hosted-CI fixes: the first current-head PR run proved that V8 `15.2.124.27` requires depot_tools support for `dep_type: gcs`, so the pinned submodule moved from `5e5802d7...` to upstream `ed9c87f6...` while self-update remains disabled. The clean leakcheck runner also proved `lsan_interface.h` belongs to `libclang-rt-21-dev`, which the authenticated Clang setup now installs explicitly.
 
 | ID | Implementation/evidence | Status |
 |---|---|---|

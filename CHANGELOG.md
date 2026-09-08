@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Stage, checksum, test, and leak-check native V8 updates before publishing an
   immutable release, with least-privilege workflow permissions and pinned build
   automation.
+- Pin a depot_tools revision that supports current V8 GCS dependency metadata,
+  and install the Clang 21 sanitizer headers required by leakcheck.
 - Document latest-release-only security support and private vulnerability
   reporting.
 

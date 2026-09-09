@@ -10,7 +10,7 @@ runs:
       run: |
         set -euo pipefail
         readonly llvm_fingerprint=6084F3CF814B57C1CF12EFD515CF4D18AF4F7421
-        sudo apt-get update
+        bash .github/scripts/apt-update.sh
         sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg
         curl --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 15 \
           --fail --silent --show-error \
@@ -34,7 +34,7 @@ runs:
         readonly llvm_codename="${UBUNTU_CODENAME:-$VERSION_CODENAME}"
         echo "deb [signed-by=/usr/share/keyrings/llvm-archive-keyring.gpg] https://apt.llvm.org/$llvm_codename/ llvm-toolchain-$llvm_codename-21 main" \
           | sudo tee /etc/apt/sources.list.d/llvm.list >/dev/null
-        sudo apt-get update
+        bash .github/scripts/apt-update.sh
         sudo apt-get install -y --no-install-recommends clang-21 libclang-rt-21-dev
         echo "CC=clang-21" >>"$GITHUB_ENV"
         echo "CXX=clang++-21" >>"$GITHUB_ENV"

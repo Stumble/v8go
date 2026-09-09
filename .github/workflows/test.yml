@@ -24,6 +24,7 @@ jobs:
   test:
     name: Tests on ${{ matrix.target.os }} ${{ matrix.target.arch }} with Go ${{ matrix.go-version }}
     strategy:
+      fail-fast: false
       matrix:
         target:
           - os: linux
@@ -41,7 +42,7 @@ jobs:
         go-version:
         # Check the earliest and two trailing versions, to keep
         # maintainance of this file reasonable.
-        - 1.19
+        - 1.24
         - oldstable
         - stable
     runs-on: ${{ matrix.target.runner }}

@@ -25,6 +25,8 @@ func Version() string {
 // Flags are expected to be prefixed with `--`, for example: `--harmony`.
 // Flags can be reverted using the `--no` prefix equivalent, for example: `--use_strict` vs `--nouse_strict`.
 // Flags will affect all Isolates created, even after creation.
+// SetFlags mutates process-global V8 state and must not be called concurrently
+// with isolate creation or execution; callers are responsible for synchronization.
 func SetFlags(flags ...string) {
 	cflags := C.CString(strings.Join(flags, " "))
 	C.SetFlags(cflags)

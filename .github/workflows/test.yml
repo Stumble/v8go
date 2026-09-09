@@ -24,6 +24,7 @@ jobs:
   test:
     name: Tests on ${{ matrix.target.os }} ${{ matrix.target.arch }} with Go ${{ matrix.go-version }}
     strategy:
+      fail-fast: false
       matrix:
         target:
           - os: linux

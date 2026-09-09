@@ -21,7 +21,8 @@ func TestVersion(t *testing.T) {
 }
 
 func TestSetFlag(t *testing.T) {
-	t.Parallel()
+	// SetFlags mutates process-global V8 state. Keep this top-level test
+	// sequential so it cannot overlap any of the parallel isolate tests.
 	ctx := v8.NewContext()
 	defer ctx.Isolate().Dispose()
 	defer ctx.Close()

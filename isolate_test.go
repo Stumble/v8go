@@ -58,30 +58,49 @@ func TestIsolateTerminateExecution(t *testing.T) {
 		t.Error("expected no execution to be terminating")
 	}
 
+	started := make(chan struct{}, 1)
+	startedFn := v8.NewFunctionTemplate(iso, func(*v8.FunctionCallbackInfo) *v8.Value {
+		select {
+		case started <- struct{}{}:
+		default:
+		}
+		return nil
+	})
+	var innerErr error
 	var terminating bool
 	fooFn := v8.NewFunctionTemplate(iso, func(info *v8.FunctionCallbackInfo) *v8.Value {
 		loop, _ := info.Args()[0].AsFunction()
-		go func() {
-			iso.TerminateExecution()
-		}()
-		loop.Call(v8.Undefined(iso))
-
+		_, innerErr = loop.Call(v8.Undefined(iso))
 		terminating = iso.IsExecutionTerminating()
 		return nil
 	})
 
 	global := v8.NewObjectTemplate(iso)
+	global.Set("started", startedFn)
 	global.Set("foo", fooFn)
 
 	ctx := v8.NewContext(iso, global)
 	defer ctx.Close()
 
-	script := `function loop() { while (true) { } }; foo(loop);`
+	stop := make(chan struct{})
+	watchDone := startIsolateTerminationWatchdog(iso, started, stop)
+	script := `function loop() { started(); while (true) {} }; foo(loop);`
 	_, e := ctx.RunScript(script, "forever.js")
+	close(stop)
+	watch := <-watchDone
+
+	if watch.timedOut {
+		t.Error("timed out waiting for JavaScript execution to start")
+	}
+	if watch.stopped || !watch.started {
+		t.Error("termination watchdog stopped before JavaScript execution started")
+	}
+	if innerErr == nil || !strings.HasPrefix(innerErr.Error(), "ExecutionTerminated") {
+		t.Errorf("unexpected inner call error: %v", innerErr)
+	}
 	if e == nil || !strings.HasPrefix(e.Error(), "ExecutionTerminated") {
 		t.Errorf("unexpected error: %v", e)
 	}
-
 	if !terminating {
 		t.Error("expected execution to have been terminating in function")
 	}

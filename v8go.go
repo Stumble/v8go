@@ -24,22 +24,31 @@ func Version() string {
 // SetFlags sets flags for V8. For possible flags: https://github.com/v8/v8/blob/master/src/flags/flag-definitions.h
 // Flags are expected to be prefixed with `--`, for example: `--harmony`.
 // Flags can be reverted using the `--no` prefix equivalent, for example: `--use_strict` vs `--nouse_strict`.
-// Flags will affect all Isolates created, even after creation.
-// SetFlags mutates process-global V8 state and must not be called concurrently
-// with isolate creation or execution; callers are responsible for synchronization.
+// Flags affect every Isolate in the process and must be set before the first
+// Isolate or Context is created. SetFlags panics after V8 initialization.
 func SetFlags(flags ...string) {
+	v8InitMutex.Lock()
+	defer v8InitMutex.Unlock()
+	if v8Initialized {
+		panic("v8go: SetFlags must be called before V8 initialization")
+	}
+
 	cflags := C.CString(strings.Join(flags, " "))
 	C.SetFlags(cflags)
 	C.free(unsafe.Pointer(cflags))
 }
 
 func initializeIfNecessary() {
+	v8InitMutex.Lock()
+	defer v8InitMutex.Unlock()
 	v8once.Do(func() {
-		cflags := C.CString("--no-freeze_flags_after_init")
-		defer C.free(unsafe.Pointer(cflags))
-		C.SetFlags(cflags)
 		C.Init()
+		v8Initialized = true
 	})
 }
 
-var v8once sync.Once
+var (
+	v8once        sync.Once
+	v8InitMutex   sync.Mutex
+	v8Initialized bool
+)

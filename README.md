@@ -40,7 +40,7 @@ Major differences include
 
 ## Requirements
 
-v8go requires Go 1.24 or newer.
+v8go requires Go 1.26 or newer.
 
 Current V8 releases use Chromium's hardened libc++. Building the cgo bridge
 therefore requires LLVM Clang 21 or newer. Set `CC` and `CXX` when building or

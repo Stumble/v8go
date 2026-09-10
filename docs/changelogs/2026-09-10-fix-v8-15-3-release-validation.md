@@ -50,7 +50,7 @@
 
 - [x] Reproduce the old post-init flag behavior with a failing subprocess test.
 - [x] Enforce the flag initialization boundary and raise the Go floor to 1.26.
-- [ ] Validate released V8 15.2 and exact V8 15.3 with fresh Go build caches.
+- [x] Validate released V8 15.2 and exact V8 15.3 with fresh Go build caches.
 - [ ] Publish a reviewed PR and monitor every current-head hosted check.
 - [ ] After merge, rerun the write-scoped V8 15.3 release workflow and verify the
   immutable release before closing the tracking issues.
@@ -74,7 +74,21 @@
 
 ## 7. Outcome and Evidence
 
-- Pending implementation verification and hosted current-head validation.
+- Result: Go 1.26 is the tested floor; V8 flags become immutable on first
+  initialization; flag tests execute in a subprocess; test/leakcheck jobs do not
+  restore Go build caches; official candidates carry an exact runtime-version
+  assertion.
+- Released V8 15.2 + Go 1.26: fresh-cache flag/version tests passed 50 times,
+  the complete suite passed, and an intentionally wrong expected version failed
+  with the actual `15.2.124.21-v8go` value.
+- Exact V8 15.3.76.11 + Go 1.26: checksum verification passed, the prior hosted
+  failure family plus flag/version tests passed 200 times, the full shuffled
+  suite passed 30 times with `GOMAXPROCS=4`, and coverage passed at 92.2%.
+- Exact V8 15.3.76.11 stable leakcheck path: fresh-cache tagged test binary
+  compiled with Go 1.27 and passed with the exact runtime-version assertion.
+- Generator idempotence, actionlint, Python compilation, 17 tool tests,
+  `git diff --check`, and task-diff gitleaks passed.
+- E2E Required: no, as planned. Hosted current-head validation remains pending.
 
 ## 8. Remaining Work
 

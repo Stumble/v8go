@@ -15,6 +15,10 @@ on:
         description: Candidate artifact hash to overlay before testing.
         required: false
         type: string
+      candidate_version:
+        description: Exact candidate V8 version expected at runtime.
+        required: false
+        type: string
       sha:
         description: "The commit to check out at. Defaults to the parent workflow's github.sha."
         required: false
@@ -67,6 +71,7 @@ jobs:
       uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6
       with:
         go-version: stable
+        cache: false
 
     - name: Set Up Workspace
       # Submodules shouldn't cause a download.
@@ -85,4 +90,6 @@ jobs:
         go test -c --tags leakcheck
 
     - name: Run Test
+      env:
+        V8GO_EXPECTED_VERSION: ${{ inputs.candidate_version }}
       run: ./v8go.test

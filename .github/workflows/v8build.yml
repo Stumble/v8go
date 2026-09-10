@@ -411,6 +411,7 @@ jobs:
     with:
       sha: ${{ needs.build_common.outputs.base_sha }}
       candidate_hash: ${{ needs.build_common.outputs.v8_hash }}
+      candidate_version: ${{ inputs.v8_version }}
 
   candidate_leakcheck:
     name: Leakcheck assembled candidate
@@ -421,3 +422,4 @@ jobs:
     with:
       sha: ${{ needs.build_common.outputs.base_sha }}
       candidate_hash: ${{ needs.build_common.outputs.v8_hash }}
+      candidate_version: ${{ inputs.v8_version }}

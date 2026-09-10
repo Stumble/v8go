@@ -8,7 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **BREAKING**: Require Go 1.24 or newer.
+- **BREAKING**: Require Go 1.26 or newer, and require `SetFlags` calls before
+  the first V8 isolate or context is created.
+- Rebuild the cgo bridge without a restored Go build cache for every test and
+  leakcheck job, and assert the exact V8 runtime version for staged candidates.
 - Track and validate the current Chrome Stable V8 branch tip every four hours,
   and triage official Chrome security announcements hourly.
 - Stage, checksum, test, and leak-check native V8 updates before publishing an

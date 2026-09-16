@@ -64,6 +64,17 @@ jobs:
           go-version-file: go.mod
           cache: false
 
+      - id: release_version
+        name: Select v8go release increment
+        env:
+          V8_VERSION: ${{ inputs.v8_version }}
+        run: |
+          set -euo pipefail
+          python3 tools/v8_release.py \
+            --current-header deps/include/v8-version.h \
+            --target "$V8_VERSION" \
+            --github-output "$GITHUB_OUTPUT"
+
       - name: Remove previous generated release files
         run: |
           set -euo pipefail
@@ -129,11 +140,13 @@ jobs:
         name: Commit and publish staging branch
         env:
           EXPECTED_BASE_SHA: ${{ inputs.base_sha }}
+          RELEASE_INCREMENT: ${{ steps.release_version.outputs.increment }}
           V8_HASH: ${{ inputs.v8_hash }}
           V8_VERSION: ${{ inputs.v8_version }}
         run: |
           set -euo pipefail
           [[ "$EXPECTED_BASE_SHA" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$RELEASE_INCREMENT" == +0.0.1 || "$RELEASE_INCREMENT" == +0.1.0 ]]
           test "$(git rev-parse HEAD)" = "$EXPECTED_BASE_SHA"
           branch="automation/v8-${V8_HASH:0:12}"
           git checkout -b "$branch"
@@ -175,7 +188,7 @@ jobs:
             module_versions+=("github.com/$repo/$submodule@$artifact_sha")
           done
           GOPROXY=direct go get "${module_versions[@]}"
-          ./tools/modifychangelog.py --release '+0.1.0' --inplace CHANGELOG.md
+          ./tools/modifychangelog.py --release "$RELEASE_INCREMENT" --inplace CHANGELOG.md
           version="$(sed -nE 's/^## \[(v[0-9]+\.[0-9]+\.[0-9]+)\].*/\1/p' CHANGELOG.md | head -n1)"
           [[ "$version" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
           git add go.mod go.sum CHANGELOG.md
@@ -194,6 +207,7 @@ jobs:
           {
             echo "V8 hash: $V8_HASH"
             echo "V8 version: $V8_VERSION"
+            echo "v8go release increment: $RELEASE_INCREMENT"
             echo "Staging branch: $branch"
             echo "Staged commit: $sha"
             echo "v8go version: $version"

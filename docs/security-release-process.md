@@ -20,6 +20,17 @@ commit. It runs every four hours.
 - Published releases and tags are never rewritten. Recovery uses a newer release
   or resumes creation of a missing release at an already-tested commit.
 
+The v8go release number follows V8's release line rather than treating every
+native refresh as a new feature line:
+
+- A newer V8 tag with the same `major.minor` pair increments the v8go patch
+  version. For example, a later `15.3.x.y` after v8go v0.38.0 becomes v0.38.1.
+- A change to V8's `major.minor` pair increments the v8go minor version and
+  resets its patch component. For example, the first validated `15.4.x.y` after
+  v0.38.x becomes v0.39.0.
+- An equal or older V8 tag fails closed. Existing v8go tags are never rewritten
+  to retrofit this policy.
+
 The workflow intentionally tracks Stable rather than V8 main, Canary, or Beta.
 Chromium recommends the Stable branch tip to embedders because security and
 correctness fixes continue to be backmerged after an individual Chrome build.

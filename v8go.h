@@ -12,6 +12,11 @@
 
 #ifdef __cplusplus
 
+#include "deps/include/v8-version.h"
+#if V8_MAJOR_VERSION > 15 || (V8_MAJOR_VERSION == 15 && V8_MINOR_VERSION >= 4)
+#define V8_CPPGC_MICROTASK_QUEUE
+#endif
+
 #include "deps/include/libplatform/libplatform.h"
 #include "deps/include/v8-profiler.h"
 #include "deps/include/v8.h"

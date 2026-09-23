@@ -8,6 +8,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Match V8 15.4's required CppGC microtask queue API in the C++ bridge while
+  preserving the V8 15.3 configuration.
+- Revalidate the Stable V8 candidate when bridge compile flags or headers
+  change.
+- Limit candidate build cache writes to trusted scheduled or manually started
+  runs; PR validation may restore caches but cannot save new ones.
+
 ## [v0.38.4] - 2026-09-22
 
 ### Changed

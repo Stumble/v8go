@@ -284,14 +284,14 @@ jobs:
           fi
 
       - name: Save exact V8 build cache
-        if: steps.restore-v8-build.outputs.cache-hit != 'true'
+        if: github.event_name != 'pull_request' && steps.restore-v8-build.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: deps/.build/${{ matrix.target.os }}_${{ matrix.target.arch }}
           key: libv8:v8build:${{ matrix.target.os }}:${{ matrix.target.arch }}:${{ needs.build_common.outputs.v8_hash }}:${{ needs.build_common.outputs.build_key }}
 
       - name: Save exact CCache
-        if: steps.restore-ccache.outputs.cache-hit != 'true'
+        if: github.event_name != 'pull_request' && steps.restore-ccache.outputs.cache-hit != 'true'
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ccache

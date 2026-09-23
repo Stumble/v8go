@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from v8_update import DiscoveryError, classify_stable_v8, parse_quarantines
 
@@ -123,6 +124,38 @@ class QuarantineParserTest(unittest.TestCase):
         )
 
         self.assertEqual({LATEST: "first reason"}, quarantines)
+
+
+class QueuedWorkflowSafetyTest(unittest.TestCase):
+    def test_stale_master_run_skips_build_and_report_side_effects(self):
+        workflow = (
+            Path(__file__).resolve().parents[1]
+            / ".github/workflows/v8upgrade.yml"
+        ).read_text()
+        decision = workflow.split("- id: decision", 1)[1].split(
+            "  build_candidate:", 1
+        )[0]
+        stale_check = decision.split("live_master_sha=", 1)[1].split(
+            "should_publish=false\n", 1
+        )[0]
+
+        self.assertIn("git ls-remote origin refs/heads/master", decision)
+        self.assertIn('[[ "$base_sha" != "$live_master_sha" ]]', decision)
+        self.assertIn("echo 'stale=true'", stale_check)
+        self.assertIn("echo 'should_build=false'", stale_check)
+        self.assertIn("echo 'should_publish=false'", stale_check)
+        self.assertIn("exit 0", stale_check)
+        self.assertLess(
+            decision.index("live_master_sha="),
+            decision.index('if [[ "$UPSTREAM_STATE" == release ]]'),
+        )
+
+        report = workflow.split("  report:", 1)[1]
+        self.assertIn("STALE_RUN: ${{ needs.discover.outputs.stale }}", report)
+        self.assertLess(
+            report.index('if [[ "$STALE_RUN" == true ]]'),
+            report.index("gh label create v8-upgrade"),
+        )
 
 
 if __name__ == "__main__":

@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Skip V8 builds and issue updates from queued workflow runs whose checked-out
+  master commit has already been superseded, avoiding duplicate releases after
+  a long-running native build.
+
 ## [v0.39.0] - 2026-09-23
 
 ### Changed

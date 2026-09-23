@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Auto-bumped V8 to 15.4.80.12.
 
 - Match V8 15.4's required CppGC microtask queue API in the C++ bridge while
   preserving the V8 15.3 configuration.

@@ -53,6 +53,7 @@ jobs:
       recovery_version: ${{ steps.decision.outputs.recovery_version }}
       should_build: ${{ steps.decision.outputs.should_build }}
       should_publish: ${{ steps.decision.outputs.should_publish }}
+      stale: ${{ steps.decision.outputs.stale }}
       state: ${{ steps.upstream.outputs.state }}
       v8_branch: ${{ steps.upstream.outputs.v8_branch }}
       v8_hash: ${{ steps.upstream.outputs.v8_hash }}
@@ -83,6 +84,20 @@ jobs:
           is_default=false
           if [[ "$GITHUB_REF" == refs/heads/master ]]; then
             is_default=true
+          fi
+          if [[ "$is_default" == true ]]; then
+            live_master_sha="$(git ls-remote origin refs/heads/master | awk '{ print $1 }')"
+            [[ "$live_master_sha" =~ ^[0-9a-f]{40}$ ]]
+            if [[ "$base_sha" != "$live_master_sha" ]]; then
+              {
+                echo "base_sha=$base_sha"
+                echo 'stale=true'
+                echo 'should_build=false'
+                echo 'should_publish=false'
+              } >>"$GITHUB_OUTPUT"
+              echo "Skipping stale master run: checked out $base_sha, live master is $live_master_sha." >>"$GITHUB_STEP_SUMMARY"
+              exit 0
+            fi
           fi
           should_publish=false
           if [[ "$is_default" == true && ( "$GITHUB_EVENT_NAME" == schedule || "$REQUESTED_PUBLISH" == true ) ]]; then
@@ -152,6 +167,7 @@ jobs:
             echo "recovery_version=$recovery_version"
             echo "should_build=$should_build"
             echo "should_publish=$should_publish"
+            echo 'stale=false'
           } >>"$GITHUB_OUTPUT"
           {
             echo "Chrome Stable: ${{ steps.upstream.outputs.chrome_version }}"
@@ -231,11 +247,16 @@ jobs:
           QUARANTINE_REASON: ${{ needs.discover.outputs.quarantine_reason }}
           RELEASE_RESULT: ${{ needs.release.result }}
           STAGE_RESULT: ${{ needs.stage.result }}
+          STALE_RUN: ${{ needs.discover.outputs.stale }}
           UPSTREAM_STATE: ${{ needs.discover.outputs.state }}
           V8_HASH: ${{ needs.discover.outputs.v8_hash }}
           V8_VERSION: ${{ needs.discover.outputs.v8_version }}
         run: |
           set -euo pipefail
+          if [[ "$STALE_RUN" == true ]]; then
+            echo 'This queued run used an older master commit; the current master workflow will make the V8 release decision.' >>"$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
           BUILD_RESULT="$RELEASE_BUILD_RESULT"
           if [[ "$BUILD_RESULT" == skipped ]]; then
             BUILD_RESULT="$CANDIDATE_BUILD_RESULT"

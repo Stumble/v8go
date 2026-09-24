@@ -7,6 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Auto-bumped V8 to 15.4.80.13.
 
 - Skip V8 builds and issue updates from queued workflow runs whose checked-out
   master commit has already been superseded, avoiding duplicate releases after

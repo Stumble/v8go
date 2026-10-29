@@ -2,6 +2,7 @@
 
 #include "deps/include/v8-context.h"
 #include "deps/include/v8-function.h"
+#include "deps/include/v8-version.h"
 #include "isolate-macros.h"
 #include "template-macros.h"
 #include "template.h"
@@ -19,7 +20,11 @@ void FunctionTemplateCallback(const FunctionCallbackInfo<Value>& info) {
   int ctx_ref = local_ctx->GetEmbedderDataV2(1).As<Integer>()->Value();
   m_ctx* ctx = goContext(ctx_ref);
 
+#if V8_MAJOR_VERSION > 15 || (V8_MAJOR_VERSION == 15 && V8_MINOR_VERSION >= 6)
+  int callback_ref = info.DataV2().As<Integer>()->Value();
+#else
   int callback_ref = info.Data().As<Integer>()->Value();
+#endif
 
   m_value* _this = new m_value;
   _this->id = 0;

@@ -438,7 +438,31 @@ def _run_gh(arguments: list[str]) -> str:
     return completed.stdout
 
 
-def _existing_security_issues(repository: str) -> dict[str, dict[str, Any]]:
+def index_security_issues(
+    issues: list[dict[str, Any]],
+) -> tuple[dict[str, dict[str, Any]], list[tuple[dict[str, Any], dict[str, Any]]]]:
+    """Map each Chrome post to its oldest issue and list newer duplicates."""
+    for issue in issues:
+        if not isinstance(issue.get("number"), int):
+            raise FeedError("GitHub issue number is invalid")
+    result: dict[str, dict[str, Any]] = {}
+    duplicates = []
+    for issue in sorted(issues, key=lambda item: item["number"]):
+        body = issue.get("body") or ""
+        match = re.search(r"<!-- chrome-release-id:([^>]+) -->", body)
+        if match:
+            entry_id = match.group(1)
+            canonical = result.get(entry_id)
+            if canonical is None:
+                result[entry_id] = issue
+            else:
+                duplicates.append((issue, canonical))
+    return result, duplicates
+
+
+def _existing_security_issues(
+    repository: str,
+) -> tuple[dict[str, dict[str, Any]], list[tuple[dict[str, Any], dict[str, Any]]]]:
     raw = _run_gh(
         [
             "api",
@@ -457,16 +481,7 @@ def _existing_security_issues(repository: str) -> dict[str, dict[str, Any]]:
     )
     pages = json.loads(raw)
     issues = [issue for page in pages for issue in page]
-    result = {}
-    for issue in issues:
-        body = issue.get("body") or ""
-        match = re.search(r"<!-- chrome-release-id:([^>]+) -->", body)
-        if match:
-            entry_id = match.group(1)
-            if entry_id in result:
-                raise FeedError(f"multiple GitHub issues track {entry_id}")
-            result[entry_id] = issue
-    return result
+    return index_security_issues(issues)
 
 
 def _ensure_labels(repository: str) -> None:
@@ -539,7 +554,23 @@ def sync_issues(
         return [notice.entry_id for notice, _ in rendered]
 
     _ensure_labels(repository)
-    existing = _existing_security_issues(repository)
+    existing, duplicates = _existing_security_issues(repository)
+    for duplicate, canonical in duplicates:
+        if duplicate.get("state") == "closed":
+            continue
+        _run_gh(
+            [
+                "issue",
+                "close",
+                str(duplicate["number"]),
+                "--repo",
+                repository,
+                "--reason",
+                "not planned",
+                "--comment",
+                f"Duplicate of #{canonical['number']}, which tracks the same official Chrome post.",
+            ]
+        )
     changed = []
     with tempfile.TemporaryDirectory(prefix="v8go-security-") as directory:
         for index, (notice, issue) in enumerate(rendered):

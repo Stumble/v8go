@@ -1,11 +1,17 @@
+import datetime as dt
+import json
 import unittest
+from unittest import mock
 
+import chrome_security
 from chrome_security import (
     FeedError,
     MAX_ENTRY_CONTENT,
+    index_security_issues,
     map_chrome_versions_to_v8,
     parse_security_feed,
     render_issue,
+    sync_issues,
 )
 
 
@@ -181,6 +187,76 @@ class ChromeSecurityFeedTest(unittest.TestCase):
         self.assertIn("Public CVEs in post: `61`", rendered.body)
         self.assertIn("CVE-2026-19999", rendered.body)
         self.assertNotIn("CVE-2026-10000", rendered.body)
+
+
+def tracking_issue(number, body, *, state="open"):
+    return {"number": number, "state": state, "body": body}
+
+
+class ChromeSecurityIssueSyncTest(unittest.TestCase):
+    def setUp(self):
+        recent = entry(
+            "<p>Chrome 156.0.8078.47 Security Fixes.</p>"
+            "<p>High CVE-2026-113193: Memory corruption in V8. "
+            "Reported by Researcher.</p>"
+        )
+        recent["updated"]["$t"] = dt.datetime.now(dt.timezone.utc).isoformat()
+        self.notices = parse_security_feed(feed(recent))
+        self.body = render_issue(self.notices[0], {}).body
+
+    def sync(self, issues):
+        calls = []
+
+        def fake_gh(arguments):
+            calls.append(arguments)
+            if arguments[0] == "api":
+                return json.dumps([issues])
+            return ""
+
+        with mock.patch.object(chrome_security, "_run_gh", side_effect=fake_gh):
+            sync_issues(
+                self.notices,
+                [],
+                repository="Stumble/v8go",
+                assignee="Stumble",
+                dry_run=False,
+                since_days=14,
+            )
+        return [call for call in calls if call[0] == "issue"]
+
+    def test_oldest_issue_tracks_a_post_and_newer_ones_are_duplicates(self):
+        marker = f"<!-- chrome-release-id:{ENTRY_ID} -->"
+        newer = tracking_issue(43, marker)
+        oldest = tracking_issue(39, marker)
+        unrelated = tracking_issue(40, "no marker")
+
+        existing, duplicates = index_security_issues([newer, unrelated, oldest])
+
+        self.assertEqual({ENTRY_ID: oldest}, existing)
+        self.assertEqual([(newer, oldest)], duplicates)
+
+    def test_malformed_issue_number_fails_closed(self):
+        with self.assertRaisesRegex(FeedError, "issue number"):
+            index_security_issues([tracking_issue("39", "")])
+
+    def test_sync_closes_open_duplicate_instead_of_failing(self):
+        issue_calls = self.sync(
+            [tracking_issue(43, self.body), tracking_issue(39, self.body)]
+        )
+
+        self.assertEqual(1, len(issue_calls))
+        self.assertEqual(["issue", "close", "43"], issue_calls[0][:3])
+        self.assertIn("Duplicate of #39", issue_calls[0][-1])
+
+    def test_sync_leaves_closed_duplicate_alone(self):
+        issue_calls = self.sync(
+            [
+                tracking_issue(43, self.body, state="closed"),
+                tracking_issue(39, self.body),
+            ]
+        )
+
+        self.assertEqual([], issue_calls)
 
 
 if __name__ == "__main__":

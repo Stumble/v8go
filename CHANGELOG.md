@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+
+## [v0.41.0] - 2026-10-30
+
+### Changed
 - Auto-bumped V8 to 15.6.75.31.
 
 - Read function callback data with `DataV2` on V8 15.6, which deprecates

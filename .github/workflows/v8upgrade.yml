@@ -18,6 +18,7 @@ on:
       - 'deps/build_common.py'
       - 'deps/build-requirements.txt'
       - 'deps/update_cgo.py'
+      - 'function_template.cc'
       - 'patches/**'
       - 'tools/v8_update.py'
       - 'tools/test_v8_update.py'

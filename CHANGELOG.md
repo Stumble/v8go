@@ -8,6 +8,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Read function callback data with `DataV2` on V8 15.6, which deprecates
+  `FunctionCallbackInfo::Data`, while preserving the V8 15.5 path.
+- Revalidate the Stable V8 candidate when the function callback bridge
+  changes.
+
 ## [v0.40.2] - 2026-10-13
 
 ### Changed

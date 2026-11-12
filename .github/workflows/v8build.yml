@@ -100,8 +100,9 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          patches=(patches/*.patch)
-          for patch_file in "${patches[@]}"; do
+          # macOS runners use /bin/bash 3.2, where expanding an empty array
+          # under set -u fails, so iterate over the nullglob directly.
+          for patch_file in patches/*.patch; do
             if patch --dry-run --forward --batch -p1 -i "$patch_file" >/dev/null 2>&1; then
               patch --forward --batch -p1 -i "$patch_file"
             elif ! patch --dry-run --reverse --batch -p1 -i "$patch_file" >/dev/null 2>&1; then
@@ -209,8 +210,9 @@ jobs:
         run: |
           set -euo pipefail
           shopt -s nullglob
-          patches=(patches/*.patch)
-          for patch_file in "${patches[@]}"; do
+          # macOS runners use /bin/bash 3.2, where expanding an empty array
+          # under set -u fails, so iterate over the nullglob directly.
+          for patch_file in patches/*.patch; do
             if patch --dry-run --forward --batch -p1 -i "$patch_file" >/dev/null 2>&1; then
               patch --forward --batch -p1 -i "$patch_file"
             elif ! patch --dry-run --reverse --batch -p1 -i "$patch_file" >/dev/null 2>&1; then

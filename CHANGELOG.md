@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Retire the maintained V8 patches that V8 15.7 already contains or no
+  longer needs, unblocking the automated Stable V8 15.7 upgrade.
 
 ## [v0.41.4] - 2026-11-03
 

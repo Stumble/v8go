@@ -1,4 +1,6 @@
+#include "deps/include/v8-context.h"
 #include "deps/include/v8-template.h"
+#include "deps/include/v8-version.h"
 
 #include "context-macros.h"
 #include "template.h"
@@ -27,7 +29,15 @@ ContextPtr NewContext(IsolatePtr iso,
   // side to lookup the context in the context registry. We use slot 1 as slot 0
   // has special meaning for the Chrome debugger.
   Local<Context> local_ctx = Context::New(iso, nullptr, global_template);
+#if V8_MAJOR_VERSION > 15 || (V8_MAJOR_VERSION == 15 && V8_MINOR_VERSION >= 8)
+  // SetEmbedderDataV3 never grows the embedder data array; native contexts
+  // preallocate V8_EMBEDDER_DATA_ARRAY_SIZE slots.
+  static_assert(V8_EMBEDDER_DATA_ARRAY_SIZE > 1,
+                "the context reference needs embedder data slot 1");
+  local_ctx->SetEmbedderDataV3(1, Integer::New(iso, ref));
+#else
   local_ctx->SetEmbedderDataV2(1, Integer::New(iso, ref));
+#endif
 
   m_ctx* ctx = new m_ctx;
   ctx->ptr.Reset(iso, local_ctx);

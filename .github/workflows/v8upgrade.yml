@@ -14,6 +14,7 @@ on:
       - '.github/workflows/v8upgrade.yml'
       - 'cpuprofilenode_test.go'
       - 'cgo.go'
+      - 'context.cc'
       - 'deps/build.py'
       - 'deps/build_common.py'
       - 'deps/build-requirements.txt'

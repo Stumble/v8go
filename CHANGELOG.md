@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   deprecates `Context::SetEmbedderDataV2`, while preserving the earlier V8
   path.
 - Revalidate the Stable V8 candidate when the context bridge changes.
+- Auto-bumped V8 to 15.7.112.45.
 
 ## [v0.41.4] - 2026-11-03
 

@@ -56,6 +56,8 @@ github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20261115021306-a3aa2d716653 h1:
 github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20261115021306-a3aa2d716653/go.mod h1:3Ejcp3T6zVri3Wm1slUvmtajApJQgkoOsNDUzSnXA2Y=
 github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20261116230558-98a60f35d5dc h1:hh97wnawGnNhyhAO9Bzd3G7+aKFs0FnTrU8pLd7QFuc=
 github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20261116230558-98a60f35d5dc/go.mod h1:3Ejcp3T6zVri3Wm1slUvmtajApJQgkoOsNDUzSnXA2Y=
+github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20261117225930-c8c78ed07b62 h1:oOCU/d4lJ89l2VtCcAqW8P/JUpSC+kx3y0M+4FepnqM=
+github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20261117225930-c8c78ed07b62/go.mod h1:3Ejcp3T6zVri3Wm1slUvmtajApJQgkoOsNDUzSnXA2Y=
 github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20250618204609-b802926d07ec h1:JcU1imEKLQnvVPQ444Nl44SNFy69ineoBjXPF8VQ8LI=
 github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20250618204609-b802926d07ec/go.mod h1:6ngHNiucZLWKJXTx5nVtPohpLiERKp5D3U8maklNFTM=
 github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20260902191116-13b73d846c3b h1:sS0ZYFDoB4yjdcVgJLD3pNwDb2aUutpvctH7qaw/2yE=
@@ -114,6 +116,8 @@ github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20261115021306-a3aa2d716653 h1:
 github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20261115021306-a3aa2d716653/go.mod h1:ZvP6fpni0gWINWlEGDyfvFJoIy2UnIokiGG1jYncFrY=
 github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20261116230558-98a60f35d5dc h1:W7oMo11qcle5aaBim9BFS5H8txZDaSAq0LVAOilkZLw=
 github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20261116230558-98a60f35d5dc/go.mod h1:ZvP6fpni0gWINWlEGDyfvFJoIy2UnIokiGG1jYncFrY=
+github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20261117225930-c8c78ed07b62 h1:/mDzsfU1BWBk+HVT0k0726OY4Xj20xm2iFoqI/of9eE=
+github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20261117225930-c8c78ed07b62/go.mod h1:ZvP6fpni0gWINWlEGDyfvFJoIy2UnIokiGG1jYncFrY=
 github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20250618204609-b802926d07ec h1:Wxw+xJCuHEfHROeTas7oPh/u+XPgBUX4ndKYTET2h0E=
 github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20250618204609-b802926d07ec/go.mod h1:1LCvu+CMQM5Ir3XTmM+MyLo3GPbyiB0bNlUtHeOtCE8=
 github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20260902191116-13b73d846c3b h1:bGUkuqYUU1guoj4PthafsYl1gxaBgjFT9Im78d2epIo=
@@ -172,6 +176,8 @@ github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20261115021306-a3aa2d716653 h1:o
 github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20261115021306-a3aa2d716653/go.mod h1:kdDUlzU4NV5i1/30jG4lUW9ge5NfHa5U7hhwTIh3Crw=
 github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20261116230558-98a60f35d5dc h1:zil/Vnqy3ort+ot8RwS6gE9MDsUztmmY2QFCKNJGWhk=
 github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20261116230558-98a60f35d5dc/go.mod h1:kdDUlzU4NV5i1/30jG4lUW9ge5NfHa5U7hhwTIh3Crw=
+github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20261117225930-c8c78ed07b62 h1:04vbNib/OcTkAst5XAYhvp7YMHjDdzYl89rBs934bH0=
+github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20261117225930-c8c78ed07b62/go.mod h1:kdDUlzU4NV5i1/30jG4lUW9ge5NfHa5U7hhwTIh3Crw=
 github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20250618204609-b802926d07ec h1:q5+REIAziksb6S7ALAgQf2fU/YylYojz/LcuU+zDOmM=
 github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20250618204609-b802926d07ec/go.mod h1:UC/yWpaXMqESvLouqUU0bubKx3hJtfIxaEwmitww9+s=
 github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20260902191116-13b73d846c3b h1:cr8r0CvufLQ7s62qo0dNhkR3qVhTwugGfc+fuC3vnnM=
@@ -230,3 +236,5 @@ github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20261115021306-a3aa2d716653 h1:4
 github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20261115021306-a3aa2d716653/go.mod h1:xZQBoBJVgGXGXbZuJRQNLtHQVVMMd2ye+JKWmJxwBAw=
 github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20261116230558-98a60f35d5dc h1:R/yMDcj2PiYIUFi/PeLgFMThDUQwSTg3O9+bYPamd9s=
 github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20261116230558-98a60f35d5dc/go.mod h1:xZQBoBJVgGXGXbZuJRQNLtHQVVMMd2ye+JKWmJxwBAw=
+github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20261117225930-c8c78ed07b62 h1:LagVXV6T68P6pjk6xFn73NKXjAgfspm/cTkesCfpmsw=
+github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20261117225930-c8c78ed07b62/go.mod h1:xZQBoBJVgGXGXbZuJRQNLtHQVVMMd2ye+JKWmJxwBAw=

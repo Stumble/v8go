@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Retry resolving the freshly pushed V8 artifact modules while the Go
+  checksum database has not published them yet, so that delay no longer
+  fails release staging. Checksum verification stays on.
 
 ## [v0.43.1] - 2026-11-18
 

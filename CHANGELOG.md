@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Retry resolving the freshly pushed V8 artifact modules while the Go
   checksum database has not published them yet, so that delay no longer
   fails release staging. Checksum verification stays on.
+- Auto-bumped V8 to 15.8.62.54.
 
 ## [v0.43.4] - 2026-11-19
 

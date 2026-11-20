@@ -308,14 +308,14 @@ def gh_ok(stdout="ok"):
 
 
 class RunGhRetryTest(unittest.TestCase):
-    def run_gh(self, outcomes, **kwargs):
+    def run_gh(self, outcomes, arguments=("label", "create"), **kwargs):
         with mock.patch.object(
             chrome_security.subprocess, "run", side_effect=outcomes
         ) as run, mock.patch.object(chrome_security.time, "sleep") as sleep, mock.patch(
             "sys.stderr"
         ):
             try:
-                return chrome_security._run_gh(["label", "create"], **kwargs), run, sleep
+                return chrome_security._run_gh(list(arguments), **kwargs), run, sleep
             except FeedError as exc:
                 return exc, run, sleep
 
@@ -363,7 +363,7 @@ class RunGhRetryTest(unittest.TestCase):
         long_message = "gh: " + "server message " * 60 + "(HTTP 502)\n"
         self.assertGreater(len(long_message), 500)
         result, run, sleep = self.run_gh(
-            [gh_error(long_message), gh_ok("done")], retry_transient=True
+            [gh_error(long_message), gh_ok("done")], ("api",), retry_transient=True
         )
 
         self.assertEqual("done", result)
@@ -371,22 +371,42 @@ class RunGhRetryTest(unittest.TestCase):
 
     def test_retries_bare_gh_api_status(self):
         result, run, _ = self.run_gh(
-            [gh_error("gh: HTTP 503\n"), gh_ok("done")], retry_transient=True
+            [gh_error("gh: HTTP 503\n"), gh_ok("done")], ("api",), retry_transient=True
         )
 
         self.assertEqual("done", result)
         self.assertEqual(2, run.call_count)
 
+    def test_retries_multiline_label_server_error(self):
+        stderr = (
+            "HTTP 503: Service Unavailable (https://api.github.com/repos/Stumble/v8go/labels)\n"
+            "Lookup failed (HTTP 404)\n"
+        )
+        result, run, _ = self.run_gh([gh_error(stderr), gh_ok("done")], retry_transient=True)
+
+        self.assertEqual("done", result)
+        self.assertEqual(2, run.call_count)
+
     def test_status_mentioned_in_client_error_text_is_not_retried(self):
-        for stderr in (
-            "gh: upstream said HTTP 500 earlier (HTTP 422)\n",
-            "gh: first line\nHTTP 500 inside the message (HTTP 404)\n",
-            "HTTP 422: Validation Failed, not an HTTP 500 (https://api.github.com/x)\n",
-            "",
+        for arguments, stderr in (
+            (("api",), "gh: upstream said HTTP 500 earlier (HTTP 422)\n"),
+            (("api",), "gh: first line\nHTTP 500 inside the message (HTTP 404)\n"),
+            (("api",), "HTTP 500: not gh api's format\n"),
+            (
+                ("label", "create"),
+                "HTTP 422: Validation Failed, not an HTTP 500 (https://api.github.com/x)\n",
+            ),
+            (
+                ("label", "create"),
+                "HTTP 422: Validation Failed (https://api.github.com/repos/Stumble/v8go/labels)\n"
+                "Previous request failed (HTTP 500)\n",
+            ),
+            (("label", "create"), "gh: HTTP 500\n"),
+            (("label", "create"), ""),
         ):
-            with self.subTest(stderr=stderr):
+            with self.subTest(arguments=arguments, stderr=stderr):
                 result, run, sleep = self.run_gh(
-                    [gh_error(stderr), gh_ok()], retry_transient=True
+                    [gh_error(stderr), gh_ok()], arguments, retry_transient=True
                 )
 
                 self.assertIsInstance(result, FeedError)

@@ -50,6 +50,8 @@ MAX_JSON_BYTES = 5 * 1024 * 1024
 MAX_FEED_ENTRIES = 100
 MAX_ENTRY_CONTENT = 1024 * 1024
 MAX_RENDERED_CVES = 50
+GH_TRANSIENT_ERROR_RE = re.compile(r"\bHTTP 5\d\d\b")
+GH_RETRY_DELAYS = (2, 5)
 
 
 class FeedError(ValueError):
@@ -421,21 +423,33 @@ def _fetch_json(url: str, *, attempts: int = 3, timeout: int = 20) -> Any:
     raise FeedError(f"failed to fetch validated JSON from {url}: {last_error}")
 
 
-def _run_gh(arguments: list[str]) -> str:
-    try:
-        completed = subprocess.run(
-            ["gh", *arguments],
-            check=True,
-            capture_output=True,
-            text=True,
-            timeout=60,
-        )
-    except subprocess.CalledProcessError as exc:
-        detail = " ".join((exc.stderr or "").split())[:500]
-        raise FeedError(f"GitHub issue operation failed: {detail or exc}") from exc
-    except (OSError, subprocess.TimeoutExpired) as exc:
-        raise FeedError(f"GitHub issue operation failed: {exc}") from exc
-    return completed.stdout
+def _run_gh(arguments: list[str], *, retry_transient: bool = False) -> str:
+    """Run gh. Set retry_transient only for reads and create-or-update calls,
+    which are safe to repeat after a GitHub 5xx response."""
+    delays = GH_RETRY_DELAYS if retry_transient else ()
+    for attempt in range(len(delays) + 1):
+        try:
+            completed = subprocess.run(
+                ["gh", *arguments],
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+        except subprocess.CalledProcessError as exc:
+            detail = " ".join((exc.stderr or "").split())[:500]
+            if attempt < len(delays) and GH_TRANSIENT_ERROR_RE.search(detail):
+                print(
+                    f"GitHub returned a server error, retrying in {delays[attempt]}s: {detail}",
+                    file=sys.stderr,
+                )
+                time.sleep(delays[attempt])
+                continue
+            raise FeedError(f"GitHub issue operation failed: {detail or exc}") from exc
+        except (OSError, subprocess.TimeoutExpired) as exc:
+            raise FeedError(f"GitHub issue operation failed: {exc}") from exc
+        return completed.stdout
+    raise AssertionError("unreachable")
 
 
 def index_security_issues(
@@ -477,7 +491,8 @@ def _existing_security_issues(
             "per_page=100",
             "--paginate",
             "--slurp",
-        ]
+        ],
+        retry_transient=True,
     )
     pages = json.loads(raw)
     issues = [issue for page in pages for issue in page]
@@ -504,7 +519,8 @@ def _ensure_labels(repository: str) -> None:
                 "--description",
                 description,
                 "--force",
-            ]
+            ],
+            retry_transient=True,
         )
 
 

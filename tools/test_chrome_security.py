@@ -1,5 +1,6 @@
 import datetime as dt
 import json
+import subprocess
 import unittest
 from unittest import mock
 
@@ -204,11 +205,13 @@ class ChromeSecurityIssueSyncTest(unittest.TestCase):
         self.notices = parse_security_feed(feed(recent))
         self.body = render_issue(self.notices[0], {}).body
 
-    def sync(self, issues):
+    def sync(self, issues, retries=None):
         calls = []
 
-        def fake_gh(arguments):
+        def fake_gh(arguments, *, retry_transient=False):
             calls.append(arguments)
+            if retries is not None:
+                retries.append((arguments[:2], retry_transient))
             if arguments[0] == "api":
                 return json.dumps([issues])
             return ""
@@ -257,6 +260,92 @@ class ChromeSecurityIssueSyncTest(unittest.TestCase):
         )
 
         self.assertEqual([], issue_calls)
+
+    def test_sync_retries_only_repeatable_calls(self):
+        retries = []
+        self.sync([], retries)
+
+        self.assertEqual(
+            [
+                (["label", "create"], True),
+                (["label", "create"], True),
+                (["label", "create"], True),
+                (["label", "create"], True),
+                (["api", "--method"], True),
+                (["issue", "create"], False),
+            ],
+            retries,
+        )
+
+
+def gh_error(stderr):
+    return subprocess.CalledProcessError(1, ["gh"], stderr=stderr)
+
+
+def gh_ok(stdout="ok"):
+    return subprocess.CompletedProcess(["gh"], 0, stdout=stdout, stderr="")
+
+
+class RunGhRetryTest(unittest.TestCase):
+    def run_gh(self, outcomes, **kwargs):
+        with mock.patch.object(
+            chrome_security.subprocess, "run", side_effect=outcomes
+        ) as run, mock.patch.object(chrome_security.time, "sleep") as sleep, mock.patch(
+            "sys.stderr"
+        ):
+            try:
+                return chrome_security._run_gh(["label", "create"], **kwargs), run, sleep
+            except FeedError as exc:
+                return exc, run, sleep
+
+    def test_retries_repeatable_call_after_server_error(self):
+        result, run, sleep = self.run_gh(
+            [
+                gh_error("HTTP 500 (https://api.github.com/repos/Stumble/v8go/labels/x)"),
+                gh_error("HTTP 503: No server is currently available"),
+                gh_ok("done"),
+            ],
+            retry_transient=True,
+        )
+
+        self.assertEqual("done", result)
+        self.assertEqual(3, run.call_count)
+        self.assertEqual([mock.call(2), mock.call(5)], sleep.call_args_list)
+
+    def test_gives_up_after_bounded_retries(self):
+        result, run, sleep = self.run_gh(
+            [gh_error("HTTP 502: Bad Gateway")] * 3, retry_transient=True
+        )
+
+        self.assertIsInstance(result, FeedError)
+        self.assertIn("HTTP 502", str(result))
+        self.assertEqual(3, run.call_count)
+        self.assertEqual(2, sleep.call_count)
+
+    def test_does_not_retry_client_errors(self):
+        result, run, sleep = self.run_gh(
+            [gh_error("HTTP 422: Validation Failed"), gh_ok()], retry_transient=True
+        )
+
+        self.assertIsInstance(result, FeedError)
+        self.assertEqual(1, run.call_count)
+        sleep.assert_not_called()
+
+    def test_does_not_retry_by_default(self):
+        result, run, sleep = self.run_gh([gh_error("HTTP 500"), gh_ok()])
+
+        self.assertIsInstance(result, FeedError)
+        self.assertEqual(1, run.call_count)
+        sleep.assert_not_called()
+
+    def test_timeout_is_not_retried(self):
+        result, run, sleep = self.run_gh(
+            [subprocess.TimeoutExpired(["gh"], 60), gh_ok()], retry_transient=True
+        )
+
+        self.assertIsInstance(result, FeedError)
+        self.assertEqual(1, run.call_count)
+        sleep.assert_not_called()
 
 
 if __name__ == "__main__":

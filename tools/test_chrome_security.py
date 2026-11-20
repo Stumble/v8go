@@ -261,6 +261,27 @@ class ChromeSecurityIssueSyncTest(unittest.TestCase):
 
         self.assertEqual([], issue_calls)
 
+    def test_sync_does_not_retry_issue_writes(self):
+        retries = []
+        self.sync(
+            [
+                tracking_issue(43, self.body),
+                tracking_issue(39, "<!-- chrome-release-id:%s -->" % ENTRY_ID, state="closed"),
+            ],
+            retries,
+        )
+
+        writes = [call for call in retries if call[0][0] == "issue"]
+        self.assertEqual(
+            [
+                (["issue", "close"], False),
+                (["issue", "edit"], False),
+                (["issue", "reopen"], False),
+                (["issue", "comment"], False),
+            ],
+            writes,
+        )
+
     def test_sync_retries_only_repeatable_calls(self):
         retries = []
         self.sync([], retries)
@@ -337,6 +358,40 @@ class RunGhRetryTest(unittest.TestCase):
         self.assertIsInstance(result, FeedError)
         self.assertEqual(1, run.call_count)
         sleep.assert_not_called()
+
+    def test_retries_gh_api_status_after_long_message(self):
+        long_message = "gh: " + "server message " * 60 + "(HTTP 502)\n"
+        self.assertGreater(len(long_message), 500)
+        result, run, sleep = self.run_gh(
+            [gh_error(long_message), gh_ok("done")], retry_transient=True
+        )
+
+        self.assertEqual("done", result)
+        self.assertEqual(2, run.call_count)
+
+    def test_retries_bare_gh_api_status(self):
+        result, run, _ = self.run_gh(
+            [gh_error("gh: HTTP 503\n"), gh_ok("done")], retry_transient=True
+        )
+
+        self.assertEqual("done", result)
+        self.assertEqual(2, run.call_count)
+
+    def test_status_mentioned_in_client_error_text_is_not_retried(self):
+        for stderr in (
+            "gh: upstream said HTTP 500 earlier (HTTP 422)\n",
+            "gh: first line\nHTTP 500 inside the message (HTTP 404)\n",
+            "HTTP 422: Validation Failed, not an HTTP 500 (https://api.github.com/x)\n",
+            "",
+        ):
+            with self.subTest(stderr=stderr):
+                result, run, sleep = self.run_gh(
+                    [gh_error(stderr), gh_ok()], retry_transient=True
+                )
+
+                self.assertIsInstance(result, FeedError)
+                self.assertEqual(1, run.call_count)
+                sleep.assert_not_called()
 
     def test_timeout_is_not_retried(self):
         result, run, sleep = self.run_gh(

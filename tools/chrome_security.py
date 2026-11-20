@@ -50,7 +50,10 @@ MAX_JSON_BYTES = 5 * 1024 * 1024
 MAX_FEED_ENTRIES = 100
 MAX_ENTRY_CONTENT = 1024 * 1024
 MAX_RENDERED_CVES = 50
-GH_TRANSIENT_ERROR_RE = re.compile(r"\bHTTP 5\d\d\b")
+# `gh api` ends its error with "(HTTP <code>)" or prints "gh: HTTP <code>".
+# Other gh commands start the error with "HTTP <code>: ..." or "HTTP <code> (...)".
+GH_API_STATUS_RE = re.compile(r"\(HTTP (\d{3})\)$")
+GH_LEADING_STATUS_RE = re.compile(r"^(?:gh: )?HTTP (\d{3})\b")
 GH_RETRY_DELAYS = (2, 5)
 
 
@@ -423,6 +426,21 @@ def _fetch_json(url: str, *, attempts: int = 3, timeout: int = 20) -> Any:
     raise FeedError(f"failed to fetch validated JSON from {url}: {last_error}")
 
 
+def _gh_http_status(stderr: str) -> int | None:
+    """Return the HTTP status gh reported, read from its error format, not its message text."""
+    lines = [line.strip() for line in stderr.splitlines() if line.strip()]
+    if not lines:
+        return None
+    match = GH_API_STATUS_RE.search(lines[-1])
+    if match:
+        return int(match.group(1))
+    for line in lines:
+        match = GH_LEADING_STATUS_RE.match(line)
+        if match:
+            return int(match.group(1))
+    return None
+
+
 def _run_gh(arguments: list[str], *, retry_transient: bool = False) -> str:
     """Run gh. Set retry_transient only for reads and create-or-update calls,
     which are safe to repeat after a GitHub 5xx response."""
@@ -437,8 +455,10 @@ def _run_gh(arguments: list[str], *, retry_transient: bool = False) -> str:
                 timeout=60,
             )
         except subprocess.CalledProcessError as exc:
-            detail = " ".join((exc.stderr or "").split())[:500]
-            if attempt < len(delays) and GH_TRANSIENT_ERROR_RE.search(detail):
+            stderr = exc.stderr or ""
+            detail = " ".join(stderr.split())[:500]
+            status = _gh_http_status(stderr)
+            if attempt < len(delays) and status is not None and 500 <= status <= 599:
                 print(
                     f"GitHub returned a server error, retrying in {delays[attempt]}s: {detail}",
                     file=sys.stderr,

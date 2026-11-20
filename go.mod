@@ -3,8 +3,8 @@ module github.com/stumble/v8go
 go 1.26
 
 require (
-	github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20261120193430-48b9981a0b6e
-	github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20261120193430-48b9981a0b6e
-	github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20261120193430-48b9981a0b6e
-	github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20261120193430-48b9981a0b6e
+	github.com/stumble/v8go/deps/darwin_amd64 v0.0.0-20261120225938-9c0b5b5d3adf
+	github.com/stumble/v8go/deps/darwin_arm64 v0.0.0-20261120225938-9c0b5b5d3adf
+	github.com/stumble/v8go/deps/linux_amd64 v0.0.0-20261120225938-9c0b5b5d3adf
+	github.com/stumble/v8go/deps/linux_arm64 v0.0.0-20261120225938-9c0b5b5d3adf
 )

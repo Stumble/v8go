@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Retry the Chrome security watch's label and issue-list GitHub calls up to
+  twice when GitHub returns a 5xx response. The two recent watch failures were
+  single 5xx responses on these label calls. Issue create, edit, close, reopen
+  and comment calls are still not retried.
 
 ## [v0.43.9] - 2026-11-21
 

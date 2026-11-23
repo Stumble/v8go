@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   twice when GitHub returns a 5xx response. The two recent watch failures were
   single 5xx responses on these label calls. Issue create, edit, close, reopen
   and comment calls are still not retried.
+- Auto-bumped V8 to 15.8.62.64.
 
 ## [v0.43.9] - 2026-11-21
 
